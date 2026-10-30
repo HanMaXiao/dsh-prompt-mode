@@ -4,7 +4,7 @@
 
 起因很具体：同一件事，**裸说**给 Agent 的效果一般；先把任务写成一份系统提示词文档，再让 Agent「先读这份文档，然后开始」——效果明显更好。这个插件把这条经验做成了可安装的机制：文档有标准、标准有工具、工具有面板、经验会累积。
 
-参考样本：`D:\XiaoProject\HanMaXiaoArtExhibition\docs\blender-agent-prompt.md`（canonical）与 `blender-iteration-prompt.md`（Round 型变体）。
+参考样本：`D:\XiaoProject\HanMaXiaoArtExhibition\docs\blender-agent-prompt.md`（canonical，**当前不在工作区**，离线自测里与它相关的 4 项因此 SKIP）与 `blender-iteration-prompt.md`（Round 型变体，在）。
 
 ---
 
@@ -16,7 +16,7 @@
 | 2 | **相关工具** | `prompt_doc_plan` / `prompt_doc_write` / `prompt_doc_audit` / `prompt_doc_learn` | 全 profile |
 | 3 | **提示词系统提示词** | `prompt:policy` prompt section（order 520） | 仅提示词模式 |
 | 4 | **最佳实践 Skill** | `system-prompt-doc-best-practices`，随教训自迭代 | 全 profile |
-| 5 | **悬浮提示词面板** | 编辑器左侧「✳ 提示词」启动器 + 右侧栏浮动标签页里的**嵌入对话** | 全 profile（Web UI） |
+| 5 | **悬浮提示词面板** | 编辑器左侧「✳ 提示词」启动器 + 「存到 Hub」按钮 + 右侧栏浮动标签页里的**嵌入对话** | 全 profile（Web UI） |
 
 ### 1 · 提示词模式
 
@@ -68,6 +68,7 @@
 面板**不是**信息板。它是 DSH 自己的对话界面——只是绑在一个由插件创建、已经处于提示词模式的会话上。
 
 - **入口**：编辑器工具栏左侧一个「✳ 提示词」小按钮（`conversation.input.left`）。点一下：找到或新建本工作区专属的提示词会话 → 给它绑定 `prompt` preset（`remote.agentPresets.select`）→ 在右侧栏浮动标签页打开它。
+- **存到 Hub**：同一个 `conversation.input.left` 座位里、启动器右侧的第二个小按钮（`prompt-mode.save-to-hub`）把输入框里的草稿复制成 Hub 插件的 Prompt 条目。它只消费 Hub 自己挂上的 `remote.hub` 命名空间，不贡献任何东西：没装 Hub 就整个不渲染，草稿为空就禁用并说明原因，保存被拒就显示一行可关闭的原因。草稿永不清空——这是复制，不是发送。
 - **面板**：右侧栏标签页，里面用宿主的 `conversation.content` 工厂以 `variant: 'embedded'` 渲染那个会话。于是**编辑器、模型选择器、@ 文件引用选择器全部白送**——因为那就是 DSH 的对话框本身。
 - **标签页头部**：标题 +「新会话」按钮（换一个新工作区会话，旧的保留）。
 
@@ -128,14 +129,14 @@ plugin_manager { action: "install_bundle", target: "D:\\XiaoProject\\DSHPluginDe
 
 `install_bundle` 会自己做 pnpm 安装与 bundle 选择，**不要**手动改 profile 的 `package.json` / `cordis.patch.yml`。
 
-离线自测（44 项，含真实 `dsh-tools` 注册表前置校验）：
+离线自测（74 项通过 / 4 项跳过；跳过的 4 项是当前工作区缺失的 canonical 参考文档，见「一、文档标准」）：
 
 ```powershell
 cd D:\XiaoProject\DSHPluginDev\dsh-prompt-mode
 node --test
 ```
 
-覆盖：两份真实参考文档的审计、渲染往返、交接提示词字面值、仓库扫描、技能打分、教训存储往返、`host.js`/`mode.js` 对真实服务形状的注册、以及四个工具在真实 cordis + 真实 `ToolRuntime` 下的端到端注册与执行。
+覆盖：两份真实参考文档的审计、渲染往返、交接提示词字面值、仓库扫描、技能打分、教训存储往返、`host.js`/`mode.js` 对真实服务形状的注册、四个工具在真实 cordis + 真实 `ToolRuntime` 下的端到端注册与执行、`prompt_doc_write` 与 `lessons.json` 的写入安全（原子落盘、失败不留临时文件、并发追加不丢教训）、以及 `client.js` 的 save-to-Hub 按钮（隐藏 / 禁用 / 两条失败路径 / 卸载）。
 
 ## 五、维护须知
 
@@ -157,7 +158,7 @@ node --test
 
    唯一确定能让新代码上线的是**新进程**（或换一个从未加载过的包名——用一次性探针包验证过，但交付物不该为此改名）。Client 侧（`client.js`）走浏览器模块表，HMR 自动重载，不需要重启。
 
-   教训：Host 侧改动要么一次做对，要么安排重启；调试期用 `check.mjs` + 真实 `cordis` 离线探针替代在线试错。
+   教训：Host 侧改动要么一次做对，要么安排重启；调试期用包内的 `tests/`（`node --test`）+ 真实 `cordis` 离线探针替代在线试错。
 
 2. **预设会随 DSH 版本漂移。**
    `preset-prompt` 的 `plugins` 列表是 `packages/bundle/web-app/presets/standard.patch.yml` 的**逐行复刻** + 一行 `prompt-mode-policy`。DSH 升级后如果 `standard` 预设变了（增删插件、改配置），这份列表要跟着同步，否则提示词模式会比 standard 少东西。用自带的漂移检查脚本比对（零依赖，逐行 diff 两边的 `plugins` 块，自动剔除本包自己追加的 `prompt-mode-policy` 行）：
@@ -172,7 +173,7 @@ node --test
    - CI 里的 `preset drift (informational)` job（`continue-on-error`，不拦截合并）会 clone `deepseek-ai/deepseek-harness` 的 master 再跑同一个脚本，DSH 升级后它负责提醒同步。
 
 3. **失败要可见。**
-   Host 侧：`tools.register()` 的抛错发生在 `ctx.inject` 的子 fiber 里，**默认静默**——开发期一个漏掉的 `output.render` 就让 4 个工具全部消失且没有任何日志。现在 `registerTools` 逐个尝试、汇总全部失败原因后再抛，并把 `status.json` 写下来。新增工具务必让 `check.mjs` 的注册表前置校验覆盖到。
+   Host 侧：`tools.register()` 的抛错发生在 `ctx.inject` 的子 fiber 里，**默认静默**——开发期一个漏掉的 `output.render` 就让 4 个工具全部消失且没有任何日志。现在 `registerTools` 逐个尝试、汇总全部失败原因后再抛，并把 `status.json` 写下来。新增工具务必让 `tests/host-registration.test.js` 的「live tool-registry preconditions」覆盖到。
 
    Client 侧同理：抛错的组件会把整个插槽条目变成空白，只在浏览器 console 里留一行 `slot entry crashed in '<slot>'`。`client.js` 因此包了 `PromptErrorBoundary`，并把 `SessionProvider` / `renderFactorySlot` 的缺失显式渲染成一行诊断，而不是静默空白。
 
@@ -198,8 +199,8 @@ node --test
 
   两条都 active 很重要：`@deepseek-ai/dsh-agent-preset` 的 `Service.init` 会 `await this.ctx.agentPresets.register(config)`，注册失败即抛、行会变 `failed`。所以 active ⇒ **提示词模式预设（连同 `mode.js` 注册的 `prompt:policy` 段）已经成功挂载**。
 - **技能已在线**：`system-prompt-doc-best-practices` 出现在会话技能 catalog；禁用 bundle 后消失（归属确认）。
-- **Client 三处注册已在线核实**（`Slots.listSubTree`，走的是用户那个真实页面）：
-  - `conversation.input.left` → 占用者 `prompt-mode.launcher`，order 30，active
+- **Client 注册已在线核实**（`Slots.listSubTree`，走的是用户那个真实页面）：
+  - `conversation.input.left` → 两个占用者：`prompt-mode.launcher`（order 30）与 `prompt-mode.save-to-hub`（order 40），均 active
   - `sidebar.right.pane.tab` → 占用者 `@local/dsh-prompt-mode`，active；并声明了子插槽 `promptchat.conversation`（kind single / scope session）
   - `shell.overlay` → 旧的 `prompt.mode.panel` 已消失（只剩 5 个 shipped 占用者）
 
@@ -209,12 +210,12 @@ node --test
   - `SessionProvider` 在**子插槽声明了 session 作用域时**注入（`ui-slots`：`[Extract<ScopeOf<S>, 'session' | 'session-maybe'>] extends [never] ? object : { SessionProvider }`）——我的 `sidebar.right.pane.tab` 注册正声明了 `{ kind: 'single', scope: 'session' }` 的子插槽；
   - `remote.session.create(payload)` / `remote.agentPresets.select(sessionId, presetId)` 的调用形式与 shipped 调用点（`sessions/manager.ts`、`ui-agent-preset/seat-store.ts`）一致。
 - **四个工具已在真实 Host 进程里验证上线**（不是推断）：建一个**晚于代码**的新 profile `promptverify`（`dsh --from-default-profile headless` + `dsh plugin add`），跑 `dsh headless`，其 `status.json` 为 `version: "1.2.0"`、`tools` 恰好四个名字、`toolsFailed: []`（见下「七、复现验证」）。
-- **核心能力也已在同一个新进程里端到端跑通**：加载 skill → 读真实文件（`host.js` / `README.md` / `check.mjs`）→ `prompt_doc_write` 产出 15244 字节文档 → `prompt_doc_audit` 自审 **100/100 PASS** → `prompt_doc_learn` 记下 1 条教训 → 输出交接行
+- **核心能力也已在同一个新进程里端到端跑通**：加载 skill → 读真实文件（`host.js` / `README.md` / `tests/`）→ `prompt_doc_write` 产出 15244 字节文档 → `prompt_doc_audit` 自审 **100/100 PASS** → `prompt_doc_learn` 记下 1 条教训 → 输出交接行
   `请先读 D:\XiaoProject\DSHPluginDev\verify-prompt-doc.md，然后开始 Phase 0 基线与环境探测。`
   产物留在 `verify-prompt-doc.md`（七章节 + Phase 0–4 + 验收标准齐全）；同一次运行把 skill 镜像从 8255 涨到 **8738 字节**、写出 `lessons.json`，**自迭代闭环闭合**。它甚至抓到了本 README 一处真实漂移（文件地图误写 `prompt-mode/`），已修。
 - **用户那个运行中的 `web` 进程只差一次重启**：它仍持有首次安装那一刻的模块代（那份代码的 `output.render` 缺失，4 个工具静默失败）。重启后看 `C:\Users\xiaoge\.dsh\prompt-mode\` 下三个文件的 `at`/修改时间是否**晚于重启时刻**：`status.json`（四个工具）、`preset.json`（`section` + `order`）、skill 镜像。`preset.json` 尤其关键——它是目前唯一能证明 `prompt:policy` 真进了预设作用域的东西。
 - **预设子行与 `prompt:policy` 段也已在真实进程里实证**（同一台 `promptverify`，给它的 user layer 插一行 `agent-preset-registry`）：`<libraryDir>/preset.json` 是 `{section: "prompt:policy", order: 520, version: "1.2.0"}` —— 这是**第二次写入**的形态，证明 `@local/dsh-prompt-mode/mode` 挂载成功、且系统提示词段真的注册进了那个预设作用域。对照实验（预设被 `--patch` 换成不可解析的行）下该文件**不出现**，所以这个判据不是自证。
-  顺带把预设定义本身也验了：`mountPreset` 会挂载全部子行，一次跑通 131 行标准插件列表 + 我追加的 `prompt-mode-policy`，零失败行。
+  顺带把预设定义本身也验了：`mountPreset` 会挂载全部子行，一次跑通 22 行标准插件列表 + 我追加的 `prompt-mode-policy`，零失败行。
 - **两处 app 组合差异，不是缺陷**：headless 应用没有 `agentPresets` 服务，所以 `preset-prompt` 行在 headless 里显示 `pending (waiting for service: agentPresets)`；在 `web` 里它 `active`。headless 也没有「选预设」的开关，所以即便把 registry 插进去，headless 里的 Agent 也不会 join 任何预设 —— 它的系统提示词里没有 `prompt:policy` 是预期行为，不是缺陷。另外 `<libraryDir>` 实测落在 `C:\Users\xiaoge\.dsh\prompt-mode`（`~/.dsh` 兜底那档）——Host 进程里没有 `DSH_PROFILE_DIR`、也没设 `DSH_PROFILE`，逐级回退到 homedir。
 - **preset 漂移已核对，结论是零漂移**：比对目标是**用户实际运行的那个 DSH 发行版**自带的 `standard` 预设，不是本地源码仓 `D:\XiaoProject\deepseek-harness`——它的 master 领先于发行版，拿它当目标会误报「本包多出」。本次核对把发行版 `app.asar` 里的 `dsh/node_modules/@deepseek-ai/dsh-web-app/presets/standard.patch.yml`（128 行，`plugins` 块 118 行）原样铺成 `<tmp>/packages/bundle/web-app/presets/standard.patch.yml`，再跑自带的漂移脚本，结果 `zero drift (22 plugin rows identical)`、退出码 0；本包只在自己末尾追加 `prompt-mode-policy` 一行（共 22 行复刻 + 1 行自有）。DSH 升级后按同一步骤重跑即可：
 
