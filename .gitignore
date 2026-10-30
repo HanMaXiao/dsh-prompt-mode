@@ -17,8 +17,10 @@ Thumbs.db
 !.vscode/extensions.json
 *.swp
 
-# The plugin's own runtime data, written beside the lesson store
-lessons.json
-system-prompt-doc-best-practices.md
-status.json
-preset.json
+# The plugin's own runtime data. These patterns are ROOT-ANCHORED on purpose:
+# an unanchored `*.md` name also matches the shipped baseline under skills/,
+# which is a runtime file the Host reads and must stay tracked.
+/lessons.json
+/system-prompt-doc-best-practices.md
+/status.json
+/preset.json
