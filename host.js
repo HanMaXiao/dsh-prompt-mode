@@ -15,7 +15,7 @@
  * bundle read symmetrically (`host.js` / `mode.js` / `client.js`). The entry is
  * resolved through `exports["."]`, so the name is free to change.
  */
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -27,7 +27,7 @@ import {
   rankSkills,
   renderDocument,
 } from './lib/standard.js'
-import { defaultLibraryDir, LESSON_CATEGORIES, LessonsStore } from './lib/lessons.js'
+import { defaultLibraryDir, LESSON_CATEGORIES, LessonsStore, writeFileAtomic } from './lib/lessons.js'
 import { writeReceipt } from './lib/receipt.js'
 import { scanWorkspace } from './lib/scan.js'
 
@@ -282,6 +282,7 @@ function writeTool(ctx) {
       '角色与目标, 必须加载的技能（按任务自动触发）, 数据源, 执行顺序, 硬性约束, 验收标准 and 立即开始.',
       'Referenced data-source paths are checked on disk and reported back, so a document never ships with a dead path.',
       'Refuses to overwrite an existing file unless `overwrite` is true.',
+      'The file is replaced in one atomic step, so a failed write leaves the previous document intact rather than a half-rendered one.',
     ].join(' '),
     parameters: {
       type: 'object',
@@ -392,7 +393,11 @@ function writeTool(ctx) {
         closingLine: optionalString(args, 'closingLine'),
       })
       mkdirSync(path.dirname(target), { recursive: true })
-      writeFileSync(target, markdown, 'utf8')
+      // One filesystem step: a sibling temp file is written and renamed onto
+      // the target, so an interrupted write leaves the previous document intact
+      // instead of a half-rendered one. On failure the temp file is removed and
+      // the error names the target.
+      writeFileAtomic(target, markdown)
 
       const missingPaths = []
       const resolveReference = makeResolver(path.dirname(target))
