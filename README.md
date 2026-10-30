@@ -160,10 +160,16 @@ node --test
    教训：Host 侧改动要么一次做对，要么安排重启；调试期用 `check.mjs` + 真实 `cordis` 离线探针替代在线试错。
 
 2. **预设会随 DSH 版本漂移。**
-   `preset-prompt` 的 `plugins` 列表是 `packages/bundle/web-app/presets/standard.patch.yml` 的**逐行复刻** + 一行 `prompt-mode-policy`。DSH 升级后如果 `standard` 预设变了（增删插件、改配置），这份列表要跟着同步，否则提示词模式会比 standard 少东西。diff 一下就知道：
+   `preset-prompt` 的 `plugins` 列表是 `packages/bundle/web-app/presets/standard.patch.yml` 的**逐行复刻** + 一行 `prompt-mode-policy`。DSH 升级后如果 `standard` 预设变了（增删插件、改配置），这份列表要跟着同步，否则提示词模式会比 standard 少东西。用自带的漂移检查脚本比对（零依赖，逐行 diff 两边的 `plugins` 块，自动剔除本包自己追加的 `prompt-mode-policy` 行）：
+
    ```powershell
-   git -C D:\XiaoProject\deepseek-harness diff -- packages/bundle/web-app/presets/standard.patch.yml
+   cd D:\XiaoProject\DSHPluginDev\dsh-prompt-mode
+   node scripts\check-preset-drift.mjs --dsh-root D:\XiaoProject\deepseek-harness
    ```
+
+   - 零漂移：退出码 0；有漂移：逐行打印「standard 有而本包没有」「本包多出」「内容变化」的条目后退出码 1，照输出改 `cordis.patch.yml` 再跑一遍即可。
+   - 不带 `--dsh-root`、也没设 `DSH_SOURCE_ROOT` 环境变量时，脚本打印 SKIP 并以 0 退出——裸检出不报错。
+   - CI 里的 `preset drift (informational)` job（`continue-on-error`，不拦截合并）会 clone `deepseek-ai/deepseek-harness` 的 master 再跑同一个脚本，DSH 升级后它负责提醒同步。
 
 3. **失败要可见。**
    Host 侧：`tools.register()` 的抛错发生在 `ctx.inject` 的子 fiber 里，**默认静默**——开发期一个漏掉的 `output.render` 就让 4 个工具全部消失且没有任何日志。现在 `registerTools` 逐个尝试、汇总全部失败原因后再抛，并把 `status.json` 写下来。新增工具务必让 `check.mjs` 的注册表前置校验覆盖到。
