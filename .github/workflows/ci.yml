@@ -46,3 +46,46 @@ jobs:
           node-version: 24
 
       - run: node --test
+
+  # Informational companion to the test job: this bundle replicates the shipped
+  # `standard` preset's plugin list in its own `preset-prompt` row, and a DSH
+  # upgrade can change that list, which would silently give Prompt Mode a
+  # different tool set than standard mode. The job is continue-on-error so a
+  # drift report never blocks a PR; it is a prompt to refresh cordis.patch.yml.
+  preset-drift:
+    name: preset drift (informational)
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # The DSH source lives in a separate public repository and only one file
+      # is needed, so the clone is sparse. The step is continue-on-error and
+      # the resolve step below re-checks the file: when the source cannot be
+      # cloned, the check SKIPs instead of failing.
+      - name: Check out the DSH source
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: master
+          path: dsh-source
+          persist-credentials: false
+          sparse-checkout: |
+            packages/bundle/web-app/presets/standard.patch.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve the DSH source root
+        id: dsh-source
+        run: |
+          if [ -f dsh-source/packages/bundle/web-app/presets/standard.patch.yml ]; then
+            echo "path=dsh-source" >> "$GITHUB_OUTPUT"
+          fi
+
+      # An empty DSH_SOURCE_ROOT makes the script print its SKIP notice and
+      # exit 0: a bare checkout must never fail the check.
+      - name: Check preset drift against the shipped standard preset
+        env:
+          DSH_SOURCE_ROOT: ${{ steps.dsh-source.outputs.path }}
+        run: node scripts/check-preset-drift.mjs
