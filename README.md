@@ -216,7 +216,22 @@ node --test
 - **预设子行与 `prompt:policy` 段也已在真实进程里实证**（同一台 `promptverify`，给它的 user layer 插一行 `agent-preset-registry`）：`<libraryDir>/preset.json` 是 `{section: "prompt:policy", order: 520, version: "1.2.0"}` —— 这是**第二次写入**的形态，证明 `@local/dsh-prompt-mode/mode` 挂载成功、且系统提示词段真的注册进了那个预设作用域。对照实验（预设被 `--patch` 换成不可解析的行）下该文件**不出现**，所以这个判据不是自证。
   顺带把预设定义本身也验了：`mountPreset` 会挂载全部子行，一次跑通 131 行标准插件列表 + 我追加的 `prompt-mode-policy`，零失败行。
 - **两处 app 组合差异，不是缺陷**：headless 应用没有 `agentPresets` 服务，所以 `preset-prompt` 行在 headless 里显示 `pending (waiting for service: agentPresets)`；在 `web` 里它 `active`。headless 也没有「选预设」的开关，所以即便把 registry 插进去，headless 里的 Agent 也不会 join 任何预设 —— 它的系统提示词里没有 `prompt:policy` 是预期行为，不是缺陷。另外 `<libraryDir>` 实测落在 `C:\Users\xiaoge\.dsh\prompt-mode`（`~/.dsh` 兜底那档）——Host 进程里没有 `DSH_PROFILE_DIR`、也没设 `DSH_PROFILE`，逐级回退到 homedir。
-- **preset 漂移已核对，结论是零漂移**：把 `preset-prompt` 的 `plugins` 块与 shipped `packages/bundle/web-app/presets/standard.patch.yml` 的对应块逐行 `Compare-Object`，两侧各 131 行、**空差集**（剔除我追加的 `prompt-mode-policy` 一行后）。DSH 升级后再跑一次同款比对即可。
+- **preset 漂移已核对，结论是零漂移**：比对目标是**用户实际运行的那个 DSH 发行版**自带的 `standard` 预设，不是本地源码仓 `D:\XiaoProject\deepseek-harness`——它的 master 领先于发行版，拿它当目标会误报「本包多出」。本次核对把发行版 `app.asar` 里的 `dsh/node_modules/@deepseek-ai/dsh-web-app/presets/standard.patch.yml`（128 行，`plugins` 块 118 行）原样铺成 `<tmp>/packages/bundle/web-app/presets/standard.patch.yml`，再跑自带的漂移脚本，结果 `zero drift (22 plugin rows identical)`、退出码 0；本包只在自己末尾追加 `prompt-mode-policy` 一行（共 22 行复刻 + 1 行自有）。DSH 升级后按同一步骤重跑即可：
+
+  ```powershell
+  # 1) 从运行中的发行版取出 shipped standard 预设，铺成脚本认识的目录形状
+  $fixture = "$env:TEMP\dsh-running-preset"
+  New-Item -ItemType Directory -Force -Path "$fixture\packages\bundle\web-app\presets" | Out-Null
+  node -e "const fs=require('fs');const b=fs.readFileSync('D:/Tool/DSH/resources/app.asar');const n=b.readUInt32LE(12);const h=JSON.parse(b.subarray(16,16+n).toString());let e=null;(function w(x,p){for(const[k,v]of Object.entries(x.files??{})){const q=p?p+'/'+k:k;if(v.files)w(v,q);else if(q.endsWith('dsh-web-app/presets/standard.patch.yml'))e={o:v.offset,s:v.size}}})(h,'');const base=8+b.readUInt32LE(4);fs.writeFileSync(process.argv[1],b.subarray(base+e.o,base+e.o+e.s))" "$fixture\packages\bundle\web-app\presets\standard.patch.yml"
+
+  # 2) 比对（期望 zero drift、退出码 0）
+  cd D:\XiaoProject\DSHPluginDev\dsh-prompt-mode
+  node scripts\check-preset-drift.mjs --dsh-root $fixture
+  ```
+
+  - 有漂移就照脚本输出把 `preset-prompt` 的 `plugins` 列表刷成发行版的形态，末尾再追加本包自己的 `prompt-mode-policy` 行，然后重跑。
+  - 取那个 yml 时**不要用 `.dsh-hub-preview\asar.mjs` 的 `cat`**：它的 asar 数据基址少算 4 字节（用 `8 + u32@8`，正确是 `8 + u32@4`），`cat` 出来的内容整体左移 4 字节——首行会多一个 `rue`、末行 `disabled: true` 被截成 `disabled: t`，`plugins` 块跟着少一行，直接拿去比会得到假漂移。上面第 1 步的读法按正确基址取，已与官方 `@electron/asar` 的 `extract` 结果逐字节对齐。
+  - 表里 `name: cordis:group` 的三行（`planning` / `compaction` / `delegation`）不是包名，是 Cordis 的分组标记，asar 里查不到对应包，核对时按原样保留即可。
 - **回执里的版本号已改为读 `package.json`**：原先写死 `'1.1.0'`，而清单已经是 1.2.0——回执的用途就是回答「跑的是哪一代」，写死的字面量等于自毁用途。
 - **无法从我这侧做的验证**：用第二个浏览器打开 GUI 行不通——`dsh web` 的启动令牌是 `randomBytes`，只存在进程内 WeakMap 里（`browser-auth.ts` 的 `processLaunchToken`），既不落盘也不在进程命令行里，无令牌的浏览器只会拿到 `401 dsh web authentication required`。「点一下启动器」这一环必须在用户那个已认证的页面里做。
 
