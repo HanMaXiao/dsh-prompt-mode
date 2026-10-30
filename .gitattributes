@@ -1,0 +1,11 @@
+# The harness imports plugin files straight from disk, and the tree was written
+# and verified with LF endings. Keep it that way on every platform, so a Windows
+# checkout is byte-identical to the one CI ran instead of differing by a
+# carriage return per line.
+* text=auto eol=lf
+
+# Never touched by the end-of-line machinery.
+*.png binary
+*.jpg binary
+*.ico binary
+*.tgz binary

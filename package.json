@@ -1,0 +1,32 @@
+{
+  "name": "@local/dsh-prompt-mode",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Prompt Mode: author grounded, standard system-prompt documents and hand them off with one copy-paste line.",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./host.js",
+    "./host": "./host.js",
+    "./mode": "./mode.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-resources",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  }
+}

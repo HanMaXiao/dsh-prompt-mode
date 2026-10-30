@@ -1,0 +1,48 @@
+# The whole package has exactly one verification command (`node --test`),
+# because there is no build, no bundler and no typecheck: the Loader reads
+# these files as written. CI therefore runs that command, and nothing else.
+#
+# The JOB NAME is the status-check context GitHub reports: a job named
+# `node --test` reports as exactly `node --test`, and branch protection must
+# require that same string.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: node --test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # This bundle ships no runtime dependency today, so there is nothing to
+      # install. The step is conditional so the day a lockfile appears, CI
+      # installs exactly what is recorded instead of resolving afresh.
+      - name: Install dependencies when a lockfile exists
+        if: hashFiles('pnpm-lock.yaml') != ''
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Install dependencies when a lockfile exists
+        if: hashFiles('pnpm-lock.yaml') != ''
+        run: pnpm install --frozen-lockfile
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: node --test

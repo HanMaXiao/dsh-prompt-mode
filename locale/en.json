@@ -1,0 +1,4 @@
+{
+  "title": "Prompt Mode",
+  "description": "Gives the agent a prompt mode: author standard system-prompt documents grounded in the real codebase, and hand off with one copy-paste line."
+}
