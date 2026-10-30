@@ -131,8 +131,8 @@ plugin_manager { action: "install_bundle", target: "D:\\XiaoProject\\DSHPluginDe
 离线自测（44 项，含真实 `dsh-tools` 注册表前置校验）：
 
 ```powershell
-cd D:\XiaoProject\DSHPluginDev
-node check.mjs
+cd D:\XiaoProject\DSHPluginDev\dsh-prompt-mode
+node --test
 ```
 
 覆盖：两份真实参考文档的审计、渲染往返、交接提示词字面值、仓库扫描、技能打分、教训存储往返、`host.js`/`mode.js` 对真实服务形状的注册、以及四个工具在真实 cordis + 真实 `ToolRuntime` 下的端到端注册与执行。
