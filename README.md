@@ -222,7 +222,10 @@ node --test
   # 1) 从运行中的发行版取出 shipped standard 预设，铺成脚本认识的目录形状
   $fixture = "$env:TEMP\dsh-running-preset"
   New-Item -ItemType Directory -Force -Path "$fixture\packages\bundle\web-app\presets" | Out-Null
-  node -e "const fs=require('fs');const b=fs.readFileSync('D:/Tool/DSH/resources/app.asar');const n=b.readUInt32LE(12);const h=JSON.parse(b.subarray(16,16+n).toString());let e=null;(function w(x,p){for(const[k,v]of Object.entries(x.files??{})){const q=p?p+'/'+k:k;if(v.files)w(v,q);else if(q.endsWith('dsh-web-app/presets/standard.patch.yml'))e={o:v.offset,s:v.size}}})(h,'');const base=8+b.readUInt32LE(4);fs.writeFileSync(process.argv[1],b.subarray(base+e.o,base+e.o+e.s))" "$fixture\packages\bundle\web-app\presets\standard.patch.yml"
+  node -e "const fs=require('fs');const b=fs.readFileSync('D:/Tool/DSH/resources/app.asar');const n=b.readUInt32LE(12);const h=JSON.parse(b.subarray(16,16+n).toString());let e=null;(function w(x,p){for(const[k,v]of Object.entries(x.files??{})){const q=p?p+'/'+k:k;if(v.files)w(v,q);else if(q.endsWith('dsh-web-app/presets/standard.patch.yml'))e=v}})(h,'');const base=8+b.readUInt32LE(4);const o=Number(e.offset),s=Number(e.size);fs.writeFileSync(process.argv[1],b.subarray(base+o,base+o+s))" "$fixture\packages\bundle\web-app\presets\standard.patch.yml"
+
+  # 取出来必须非空（当前 6799 字节 / 128 行）；是 0 就说明偏移量没转数字，见下
+  (Get-Item "$fixture\packages\bundle\web-app\presets\standard.patch.yml").Length
 
   # 2) 比对（期望 zero drift、退出码 0）
   cd D:\XiaoProject\DSHPluginDev\dsh-prompt-mode
@@ -231,6 +234,7 @@ node --test
 
   - 有漂移就照脚本输出把 `preset-prompt` 的 `plugins` 列表刷成发行版的形态，末尾再追加本包自己的 `prompt-mode-policy` 行，然后重跑。
   - 取那个 yml 时**不要用 `.dsh-hub-preview\asar.mjs` 的 `cat`**：它的 asar 数据基址少算 4 字节（用 `8 + u32@8`，正确是 `8 + u32@4`），`cat` 出来的内容整体左移 4 字节——首行会多一个 `rue`、末行 `disabled: true` 被截成 `disabled: t`，`plugins` 块跟着少一行，直接拿去比会得到假漂移。上面第 1 步的读法按正确基址取，已与官方 `@electron/asar` 的 `extract` 结果逐字节对齐。
+  - asar 头里 `offset` 是**字符串**（`size` 才是数字），所以第 1 步必须 `Number(e.offset)` / `Number(e.size)`：少了 `Number()` 时 `base + e.offset` 退化成字符串拼接，`subarray` 拿到越界下标后**静默写出一个 0 字节文件**、退出码还是 0——脚本随后报的是 `plugins:` 缺失而不是空文件，很容易绕远路。取完顺手 `Length` 一下就能挡住。
   - 表里 `name: cordis:group` 的三行（`planning` / `compaction` / `delegation`）不是包名，是 Cordis 的分组标记，asar 里查不到对应包，核对时按原样保留即可。
 - **回执里的版本号已改为读 `package.json`**：原先写死 `'1.1.0'`，而清单已经是 1.2.0——回执的用途就是回答「跑的是哪一代」，写死的字面量等于自毁用途。
 - **无法从我这侧做的验证**：用第二个浏览器打开 GUI 行不通——`dsh web` 的启动令牌是 `randomBytes`，只存在进程内 WeakMap 里（`browser-auth.ts` 的 `processLaunchToken`），既不落盘也不在进程命令行里，无令牌的浏览器只会拿到 `401 dsh web authentication required`。「点一下启动器」这一环必须在用户那个已认证的页面里做。
