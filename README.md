@@ -188,6 +188,16 @@ node --test
 6. **profile patch 里插入新行必须包在 `- insert:` 里。**
    顶层写 `- id: foo` + `name: bar` 是**覆盖**语义；id 不存在时 Loader 只打印 `patch: entry "foo" not found` 然后跳过。`- id:` 只能用来覆盖已存在的行（例如 `permission`、`ui-theme`）。
 
+7. **改完 `lib/lessons.js` 必须跑姊妹镜像漂移检查。**
+   本包与公开姊妹包 `dsh-prompt-optimize` 各自持有一份 `lib/lessons.js`，这是刻意镜像而不是疏漏（理由与边界见 [Agent Note: 两个提示词 bundle 各自持有一份教训存储实现](.agents/notes/implemented/architecture/2026-10-30-two-prompt-bundles-keep-separate-lesson-stores.md)），但此前没有任何机制发现两边不同步：
+
+   ```powershell
+   cd D:\XiaoProject\DSHPluginDev\dsh-prompt-mode
+   node scripts\check-lessons-mirror.mjs
+   ```
+
+   脚本比对的是**契约面**而不是文件内容：两边都必须导出的 4 个符号，加上对两个 store 在各自临时目录里的行为探针（`add` → `readSync` → `writeMirror`，以及损坏的 `lessons.json` 必须退化成空列表并报出 `.problem` 而不是抛错）。那篇 note 判定为刻意的差异——id 前缀、分类集合、library 目录名、镜像文件名、`composeLessonsSection` 的位置——不参与比对。退出码：0 零漂移或找不到姊妹模块（打印 SKIP），1 有漂移并逐项打印原因，2 显式指定的姊妹路径不存在。姊妹模块从 `SIBLING_ROOT`、`--sibling <path>` 或本机默认检出解析。CI 里的 `lessons mirror drift (informational)` job（`continue-on-error`，不拦截合并）会 clone 姊妹仓库的 `lib/lessons.js` 再跑同一个脚本，它只提醒、不代替你本地跑。
+
 ---
 
 ## 六、当前状态

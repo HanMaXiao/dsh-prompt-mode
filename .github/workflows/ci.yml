@@ -117,3 +117,48 @@ jobs:
         env:
           DSH_SOURCE_ROOT: ${{ steps.dsh-source.outputs.path }}
         run: node scripts/check-preset-drift.mjs
+
+  # Informational companion to the test job: this bundle and its public sibling
+  # `dsh-prompt-optimize` each ship their own `lib/lessons.js`, a deliberate
+  # hand-mirrored duplicate — a bundle is installed and loaded as an
+  # independent package, so neither side can import the other's copy. Nothing
+  # used to notice when the two drifted apart, and a silent difference there
+  # costs real lessons. The job is continue-on-error so a drift report never
+  # blocks a PR; it is a prompt to change both copies together.
+  lessons-mirror-drift:
+    name: lessons mirror drift (informational)
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # The sibling is a separate public repository and only one file is
+      # needed, so the clone is sparse. The step is continue-on-error and the
+      # resolve step below re-checks the file: when the source cannot be
+      # cloned, the check SKIPs instead of failing.
+      - name: Check out the sibling lessons store
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: HanMaXiao/dsh-prompt-optimize
+          ref: main
+          path: sibling-source
+          persist-credentials: false
+          sparse-checkout: |
+            lib/lessons.js
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve the sibling lessons store
+        id: sibling-source
+        run: |
+          if [ -f sibling-source/lib/lessons.js ]; then
+            echo "path=sibling-source" >> "$GITHUB_OUTPUT"
+          fi
+
+      # An empty SIBLING_ROOT makes the script print its SKIP notice and exit
+      # 0: a bare checkout must never fail the check.
+      - name: Check the sibling lessons-store mirror for drift
+        env:
+          SIBLING_ROOT: ${{ steps.sibling-source.outputs.path }}
+        run: node scripts/check-lessons-mirror.mjs
