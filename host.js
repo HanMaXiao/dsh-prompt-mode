@@ -280,7 +280,8 @@ function writeTool(ctx) {
       'Write or refresh a standard system-prompt document, then return the copy-paste handoff line.',
       'The rendered document always carries the metadata block (版本 / 适用任务 / 使用方法),',
       '角色与目标, 必须加载的技能（按任务自动触发）, 数据源, 执行顺序, 硬性约束, 验收标准 and 立即开始.',
-      'Referenced data-source paths are checked on disk and reported back, so a document never ships with a dead path.',
+      'Every data-source path and skill name is resolved before anything is written, so a document never ships with a dead path:',
+      'unresolved entries make the call fail by default; pass force: true to write anyway and receive the same report back.',
       'Refuses to overwrite an existing file unless `overwrite` is true.',
       'The file is replaced in one atomic step, so a failed write leaves the previous document intact rather than a half-rendered one.',
     ].join(' '),
@@ -353,6 +354,7 @@ function writeTool(ctx) {
         firstActions: { type: 'array', items: { type: 'string' }, description: 'The first 2-4 actions under 立即开始.' },
         closingLine: { type: 'string', description: 'The bold imperative that ends the document.' },
         overwrite: { type: 'boolean', description: 'Replace an existing document (default false).' },
+        force: { type: 'boolean', description: 'Write even when a data-source path or skill name does not resolve (default false); the result still reports them.' },
       },
       required: ['path', 'title', 'appliesTo', 'role', 'entry'],
       additionalProperties: false,
@@ -374,6 +376,29 @@ function writeTool(ctx) {
       const exists = existsSync(target)
       if (exists && args.overwrite !== true) {
         throw new Error(`${target} already exists. Read it, then either pass overwrite: true or pick a new path (e.g. a -v2 suffix).`)
+      }
+      // Resolve every referenced path and skill name before the disk is
+      // touched: the report in the result must never describe a document that
+      // was already written past a dead entry. `force` is the only bypass.
+      const missingPaths = []
+      const resolveReference = makeResolver(path.dirname(target))
+      for (const source of asArray(args.dataSources)) {
+        const candidate = String(source?.path ?? '').trim()
+        if (candidate === '') continue
+        if (resolveReference(candidate) === undefined) missingPaths.push(candidate)
+      }
+      const catalog = await skillCatalog(ctx, path.dirname(target), exec.signal)
+      const requested = asArray(args.skills).map(row => String(row?.skill ?? '').trim()).filter(Boolean)
+      const unknownSkills = catalog.names === undefined
+        ? []
+        : [...new Set(requested.filter(name => !catalog.names.has(name)))]
+      if ((missingPaths.length > 0 || unknownSkills.length > 0) && args.force !== true) {
+        throw new Error([
+          `refusing to write ${target}:`,
+          ...missingPaths.map(candidate => `- data source path does not resolve: ${candidate}`),
+          ...unknownSkills.map(name => `- skill name is not in the catalog: ${name}`),
+          'Fix the paths (rerun prompt_doc_plan) or the skill names, or pass force: true to write anyway and receive the same report.',
+        ].join('\n'))
       }
       const markdown = renderDocument({
         title: requireString(args, 'title'),
@@ -398,19 +423,6 @@ function writeTool(ctx) {
       // instead of a half-rendered one. On failure the temp file is removed and
       // the error names the target.
       writeFileAtomic(target, markdown)
-
-      const missingPaths = []
-      const resolveReference = makeResolver(path.dirname(target))
-      for (const source of asArray(args.dataSources)) {
-        const candidate = String(source?.path ?? '').trim()
-        if (candidate === '') continue
-        if (resolveReference(candidate) === undefined) missingPaths.push(candidate)
-      }
-      const catalog = await skillCatalog(ctx, path.dirname(target), exec.signal)
-      const requested = asArray(args.skills).map(row => String(row?.skill ?? '').trim()).filter(Boolean)
-      const unknownSkills = catalog.names === undefined
-        ? []
-        : [...new Set(requested.filter(name => !catalog.names.has(name)))]
 
       const audit = auditDocument(markdown, {
         pathExists: candidate => resolveReference(candidate) !== undefined,
