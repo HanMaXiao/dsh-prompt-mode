@@ -29,7 +29,7 @@ import {
 } from './lib/standard.js'
 import { defaultLibraryDir, LESSON_CATEGORIES, LessonsStore, writeFileAtomic } from './lib/lessons.js'
 import { writeReceipt } from './lib/receipt.js'
-import { scanWorkspace } from './lib/scan.js'
+import { DEFAULT_MAX_ENTRIES, GROUP_CAP, scanWorkspace } from './lib/scan.js'
 
 const PACKAGE_DIR = path.dirname(fileURLToPath(import.meta.url))
 const SKILL_NAME = 'system-prompt-doc-best-practices'
@@ -61,19 +61,58 @@ function clip(value, max = 240) {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
 }
 
+/**
+ * Validate one scan bound: a positive integer, or a loud failure.
+ *
+ * Config arrives as operator-written YAML, so a wrong type or range here is a
+ * deployment mistake that must surface at apply time; falling back to a
+ * default would scan a different tree than the operator configured.
+ */
+function requirePositiveInteger(value, key) {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`@local/dsh-prompt-mode config key ${key} must be a positive integer, got ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
+/**
+ * Validate `groupCaps`: a plain object keyed by scan group name, with positive
+ * integer values. Groups the object omits keep their shipped default, so a
+ * config may tighten one group without restating the other five.
+ */
+function resolveGroupCaps(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`@local/dsh-prompt-mode config key groupCaps must be a plain object of per-group caps, got ${JSON.stringify(value)}`)
+  }
+  const caps = { ...GROUP_CAP }
+  for (const [group, cap] of Object.entries(value)) {
+    if (!Object.keys(GROUP_CAP).includes(group)) {
+      throw new Error(`@local/dsh-prompt-mode config key groupCaps has unknown group ${group} — known groups are ${Object.keys(GROUP_CAP).join(', ')}`)
+    }
+    caps[group] = requirePositiveInteger(cap, `groupCaps.${group}`)
+  }
+  return caps
+}
+
 /** Accept only the config keys this plugin understands; unknown keys fail loud. */
 function resolveOptions(config) {
   const raw = config ?? {}
-  const known = new Set(['libraryDir', 'scanDepth'])
+  const known = new Set(['libraryDir', 'scanDepth', 'maxEntries', 'groupCaps'])
   const unknown = Object.keys(raw).filter(key => !known.has(key))
   if (unknown.length > 0) {
-    throw new Error(`@local/dsh-prompt-mode has unknown config key(s) ${unknown.join(', ')} — config is { libraryDir?, scanDepth? }`)
+    throw new Error(`@local/dsh-prompt-mode has unknown config key(s) ${unknown.join(', ')} — config is { libraryDir?, scanDepth?, maxEntries?, groupCaps? }`)
   }
   const libraryDir = typeof raw.libraryDir === 'string' && raw.libraryDir.trim() !== ''
     ? path.resolve(raw.libraryDir)
     : defaultLibraryDir()
   const scanDepth = Number.isFinite(raw.scanDepth) ? Number(raw.scanDepth) : 4
-  return { libraryDir, scanDepth }
+  const maxEntries = raw.maxEntries === undefined
+    ? DEFAULT_MAX_ENTRIES
+    : requirePositiveInteger(raw.maxEntries, 'maxEntries')
+  const groupCaps = raw.groupCaps === undefined
+    ? { ...GROUP_CAP }
+    : resolveGroupCaps(raw.groupCaps)
+  return { libraryDir, scanDepth, maxEntries, groupCaps }
 }
 
 /** The shipped baseline skill body, or a diagnostic stub when it is missing. */
@@ -243,7 +282,7 @@ function planTool(ctx, options) {
       const cwd = resolveCwd(exec, args.cwd)
       const depth = Number.isFinite(args.depth) ? Number(args.depth) : options.scanDepth
       if (!existsSync(cwd)) throw new Error(`working directory does not exist: ${cwd}`)
-      const scan = scanWorkspace(cwd, { maxDepth: depth })
+      const scan = scanWorkspace(cwd, { maxDepth: depth, maxEntries: options.maxEntries, groupCaps: options.groupCaps })
       const wanted = optionalString(args, 'group')
       const groups = {}
       for (const [key, files] of Object.entries(scan.groups)) {
@@ -795,7 +834,7 @@ function registerSkill(ctx, { store, baseline }) {
  * Bundle entry point.
  *
  * @param ctx Cordis context of the `prompt-doc-core` loader row.
- * @param config `{ libraryDir?, scanDepth? }` from that row.
+ * @param config `{ libraryDir?, scanDepth?, maxEntries?, groupCaps? }` from that row.
  */
 export function apply(ctx, config = {}) {
   const options = resolveOptions(config)
