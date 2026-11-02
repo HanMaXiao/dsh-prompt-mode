@@ -14,6 +14,12 @@
  * artifacts into the workspace root. Both move: the script is deleted by this
  * migration, and `node --test` runs this file as its own process, so the fixture
  * and the document live in this file's own temporary directory.
+ *
+ * `prompt_doc_audit` also takes an optional `paths` array: every listed document
+ * goes through the single-path logic (its own directory resolves its relative
+ * paths, its own skill names are checked) and the call answers with a
+ * per-document summary instead of the single-document shape, while a missing
+ * document becomes a failed row rather than an error.
  */
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
@@ -184,5 +190,151 @@ describe('prompt_doc_write validates before it persists', () => {
     assert.deepEqual(result.unknownSkills, ['not-a-real-skill'], result.unknownSkills.join(','))
     assert.equal(result.handoff, `请先读 ${target}，然后开始 Step 1 强制落盘。`)
     assert.match(result.next, /Fix missingPaths \/ unknownSkills/)
+  })
+})
+
+describe('prompt_doc_audit audits several documents in one call', () => {
+  let auditTool
+  let writeTool
+  let batchDir
+  let passDoc
+  let deadDoc
+  let junkDoc
+  let batch
+
+  before(async () => {
+    batchDir = mkdtempSync(path.join(os.tmpdir(), 'prompt-mode-audit-batch-'))
+    const host = fakeContext()
+    applyHost(host.ctx, { libraryDir: testLibrary })
+    auditTool = host.registered.tools.find(tool => tool.name === 'prompt_doc_audit')
+    writeTool = host.registered.tools.find(tool => tool.name === 'prompt_doc_write')
+
+    // The passing document's data source sits next to it, so its row proves
+    // each document is resolved against its own directory.
+    const source = path.join(batchDir, 'batch-source.md')
+    writeFileSync(source, '批量自测数据源：prompt_doc_audit 必须逐文档解析相对路径。\n', 'utf8')
+    passDoc = path.join(batchDir, 'batch-pass-doc.md')
+    rmSync(passDoc, { force: true })
+    await writeTool.execute({
+      path: passDoc,
+      title: '批量自测 Agent 提示词',
+      appliesTo: '验证 prompt_doc_audit 一次审计多个文档',
+      role: '你是一位自测工程师。',
+      entry: 'Step 1 批量自测',
+      skills: [{ when: '需要驱动 Blender 时', skill: 'blender-mcp-best-practices' }],
+      dataSources: [{ path: 'batch-source.md', covers: '本批量自测' }],
+      steps: [{ title: 'Step 0 · 探测', items: ['确认 batch-source.md 可读'] }],
+      constraints: [{ group: '自测', items: ['不要把自测产物留在仓库里'] }],
+      acceptance: ['audit 返回 PASS'],
+      firstActions: ['读 batch-source.md'],
+      closingLine: '现在跑一遍批量自测。',
+    }, { agent: undefined, signal: undefined })
+
+    deadDoc = path.join(batchDir, 'batch-dead-doc.md')
+    junkDoc = path.join(batchDir, 'batch-junk-doc.md')
+    writeFileSync(junkDoc, '# 占位文档\n\n没有任何标准章节。\n', 'utf8')
+
+    batch = await auditTool.execute({
+      path: passDoc,
+      paths: [passDoc, deadDoc, junkDoc],
+    }, { agent: undefined, signal: undefined })
+  })
+
+  after(() => rmSync(batchDir, { recursive: true, force: true }))
+
+  it('summarizes the whole run', () => {
+    assert.equal(batch.summary.total, 3)
+    assert.equal(batch.summary.passed, 1)
+    assert.equal(batch.summary.failed, 2)
+    assert.equal(batch.summary.averageScore, Math.round((batch.documents[0].score + batch.documents[1].score + batch.documents[2].score) / 3))
+  })
+
+  it('reports every document with its own outcome', () => {
+    assert.deepEqual(batch.documents.map(doc => doc.path), [passDoc, deadDoc, junkDoc])
+    assert.deepEqual(batch.documents.map(doc => Object.keys(doc)), [
+      ['path', 'ok', 'score', 'missingPaths', 'unknownSkills'],
+      ['path', 'ok', 'score', 'missingPaths', 'unknownSkills'],
+      ['path', 'ok', 'score', 'missingPaths', 'unknownSkills'],
+    ])
+    assert.equal(batch.documents[0].ok, true)
+    assert.equal(batch.documents[0].score, 100)
+    assert.deepEqual(batch.documents[0].missingPaths, [])
+    assert.deepEqual(batch.documents[0].unknownSkills, [])
+  })
+
+  it('counts a missing document as a failed row instead of throwing', () => {
+    const dead = batch.documents[1]
+    assert.equal(dead.ok, false)
+    assert.equal(dead.score, 0)
+    assert.deepEqual(dead.missingPaths, [deadDoc], dead.missingPaths.join(','))
+    assert.deepEqual(dead.unknownSkills, [])
+  })
+
+  it('fails a document whose failures are structural, not path or skill related', () => {
+    const junk = batch.documents[2]
+    assert.equal(junk.ok, false)
+    assert.deepEqual(junk.missingPaths, [])
+    assert.deepEqual(junk.unknownSkills, [])
+  })
+
+  it('renders one row per document plus the first failure', () => {
+    const body = auditTool.output.render({}, batch)[0].text
+    assert.match(body, /^audited 3 document\(s\): 1 passed, 2 failed, average score \d+\/100/m)
+    assert.ok(body.includes(`${passDoc}  100/100  PASS  0 problem(s)`), body)
+    assert.ok(body.includes(`${deadDoc}  0/100  FAIL  1 problem(s)`), body)
+    assert.ok(body.includes(`${junkDoc}  0/100  FAIL  0 problem(s)`), body)
+    assert.ok(body.includes(`first failed document: ${deadDoc}`), body)
+    assert.ok(body.includes(`- path does not resolve: ${deadDoc}`), body)
+  })
+
+  it('renders the structural-failure hint when no path or skill is unresolved', async () => {
+    const result = await auditTool.execute({
+      path: junkDoc,
+      paths: [junkDoc],
+    }, { agent: undefined, signal: undefined })
+    const body = auditTool.output.render({}, result)[0].text
+    assert.ok(body.includes(`first failed document: ${junkDoc}`), body)
+    assert.ok(body.includes(`- no unresolved path or skill name; audit ${junkDoc} alone for the failing checks`), body)
+  })
+
+  it('presents a batch card with the counts and the failed list', () => {
+    const card = auditTool.presentResult({}, { value: batch })
+    assert.equal(card.card, 'generic')
+    assert.equal(card.title, '审计 3 份文档：1 通过 / 2 失败')
+    const body = card.content[0].text
+    assert.match(body, /平均分 \d+\/100/)
+    assert.ok(body.includes(`- ${deadDoc}（0/100）`), body)
+    assert.ok(body.includes(`- ${junkDoc}（0/100）`), body)
+  })
+
+  it('keeps the single-document shape when paths is omitted', async () => {
+    const single = await auditTool.execute({ path: passDoc }, { agent: undefined, signal: undefined })
+    assert.equal(single.documents, undefined)
+    assert.equal(single.summary, undefined)
+    assert.equal(single.path, passDoc)
+    assert.equal(single.ok, true)
+    assert.equal(single.score, 100)
+    assert.equal(typeof single.bytes, 'number')
+    assert.ok(Array.isArray(single.checks) && single.checks.length > 0)
+    assert.equal(typeof single.referencedPaths, 'number')
+    const body = auditTool.output.render({}, single)[0].text
+    assert.ok(body.startsWith(`${passDoc}: 100/100 PASS (`), body)
+    assert.ok(body.includes('WARN 可选元信息'), body)
+    assert.ok(!body.includes('document(s):'), 'the batch summary never renders for a single document')
+  })
+
+  it('keeps the single-document shape when paths is an empty array', async () => {
+    const single = await auditTool.execute({ path: passDoc, paths: [] }, { agent: undefined, signal: undefined })
+    assert.equal(single.documents, undefined)
+    assert.equal(single.summary, undefined)
+    assert.equal(single.ok, true)
+    assert.equal(single.score, 100)
+  })
+
+  it('still throws for a missing document on the single-path call', async () => {
+    await assert.rejects(
+      () => auditTool.execute({ path: deadDoc, paths: [] }, { agent: undefined, signal: undefined }),
+      /document not found/,
+    )
   })
 })
