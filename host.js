@@ -143,6 +143,14 @@ async function skillCatalog(ctx, cwd, signal) {
  * root, so ancestor directories are probed next, and the Host cwd last. All
  * three are real authoring habits and none of them should read as a dead path.
  *
+ * Memoization contract: the cache lives and dies with this one resolver
+ * instance, i.e. one tool call. `prompt_doc_write` and `prompt_doc_audit` build
+ * a fresh resolver on every execution, so a candidate that resolved to
+ * `undefined` is re-probed on disk in the next call and a file created in the
+ * meantime is found rather than misreported as missing. Never share a cache
+ * across instances: a frozen `undefined` would ship exactly that false
+ * negative.
+ *
  * @param baseDir Directory the document lives in.
  * @returns `(candidate) => absolutePath | undefined`.
  */
@@ -157,15 +165,22 @@ export function makeResolver(baseDir) {
     anchors.push(walk)
   }
   anchors.push(cwd)
-  return candidate => {
-    const value = String(candidate ?? '').trim()
-    if (value === '') return undefined
+  const cache = new Map()
+  const resolveUncached = value => {
     if (path.isAbsolute(value)) return existsSync(value) ? value : undefined
     for (const anchor of anchors) {
       const resolved = path.resolve(anchor, value)
       if (existsSync(resolved)) return resolved
     }
     return undefined
+  }
+  return candidate => {
+    const value = String(candidate ?? '').trim()
+    if (value === '') return undefined
+    if (cache.has(value)) return cache.get(value)
+    const resolved = resolveUncached(value)
+    cache.set(value, resolved)
+    return resolved
   }
 }
 
