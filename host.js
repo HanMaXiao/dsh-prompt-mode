@@ -479,6 +479,65 @@ function writeTool(ctx) {
   }
 }
 
+/**
+ * Audit one document already known to exist, with the single-path call's body
+ * verbatim: read it, resolve its paths against its own directory, check its
+ * skill names against the live catalog.
+ *
+ * The caller owns the existence check, because the two callers fail differently
+ * on a missing file: the single-path call throws, the batch call records a
+ * failed row. `bytes` / `checks` / `referencedPaths` exist only for the
+ * single-path shape, so the batch caller projects the five keys it needs.
+ */
+async function auditOneDocument(ctx, target, signal) {
+  const markdown = readFileSync(target, 'utf8')
+  const catalog = await skillCatalog(ctx, path.dirname(target), signal)
+  const resolveReference = makeResolver(path.dirname(target))
+  const audit = auditDocument(markdown, {
+    pathExists: candidate => resolveReference(candidate) !== undefined,
+    skillNames: catalog.names,
+  })
+  return {
+    path: target,
+    bytes: statSync(target).size,
+    ok: audit.ok,
+    score: audit.score,
+    checks: audit.checks,
+    missingPaths: audit.missingPaths,
+    unknownSkills: audit.unknownSkills,
+    referencedPaths: audit.paths.length,
+  }
+}
+
+/**
+ * Batch render: one compact row per document (path, score, PASS/FAIL, problem
+ * count), then the first failed document's problem detail. Detail lines go
+ * through `clip` so a long path or a long skill list cannot flood a transcript.
+ */
+function renderAuditBatch(value) {
+  const documents = value.documents ?? []
+  const summary = value.summary ?? {}
+  const lines = [
+    `audited ${summary.total ?? documents.length} document(s): ${summary.passed ?? 0} passed, ${summary.failed ?? 0} failed, average score ${summary.averageScore ?? '?'}/100`,
+    ...documents.map(doc => `${doc.path}  ${doc.score}/100  ${doc.ok ? 'PASS' : 'FAIL'}  ${doc.missingPaths.length + doc.unknownSkills.length} problem(s)`),
+  ]
+  const firstFailed = documents.find(doc => doc.ok !== true)
+  if (firstFailed !== undefined) {
+    const problems = [
+      ...firstFailed.missingPaths.map(entry => `- path does not resolve: ${clip(entry)}`),
+      ...firstFailed.unknownSkills.map(entry => `- skill not in the catalog: ${clip(entry)}`),
+    ]
+    lines.push(
+      '',
+      `first failed document: ${firstFailed.path}`,
+      problems.length > 0
+        ? problems.join('\n')
+        : `- no unresolved path or skill name; audit ${firstFailed.path} alone for the failing checks`,
+    )
+  }
+  return text(lines.join('\n'))
+}
+
 /** `prompt_doc_audit`: score an existing document against the standard. */
 function auditTool(ctx) {
   return {
@@ -488,48 +547,87 @@ function auditTool(ctx) {
       'their order, every referenced local path on disk, every skill name against the live catalog,',
       'and whether 立即开始 gives runnable first steps plus an imperative closing line.',
       'Run it after hand-editing a document and before handing it to a fresh session.',
+      'Pass `paths` (an array of document paths) to audit several documents in one call and get a per-document summary;',
+      'omit it to audit the single `path`.',
     ].join(' '),
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Absolute path of the document to audit.' },
+        paths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Several documents to audit in one call; omit it to audit the single `path`.',
+        },
       },
       required: ['path'],
       additionalProperties: false,
     },
     output: {
       ...resultOutput,
-      render: (_args, value) => text([
-        `${value.path}: ${value.score}/100 ${value.ok ? 'PASS' : 'FAIL'} (${value.referencedPaths} referenced path(s) checked)`,
-        ...(value.checks ?? []).filter(check => check.status !== 'pass')
-          .map(check => `${check.status === 'warn' ? 'WARN' : 'FAIL'} ${check.label}${check.detail ? ` — ${clip(check.detail)}` : ''}`),
-        (value.checks ?? []).every(check => check.status === 'pass') ? 'every check passed.' : '',
-      ].filter(Boolean).join('\n')),
+      render: (_args, value) => (value?.documents === undefined
+        ? text([
+          `${value.path}: ${value.score}/100 ${value.ok ? 'PASS' : 'FAIL'} (${value.referencedPaths} referenced path(s) checked)`,
+          ...(value.checks ?? []).filter(check => check.status !== 'pass')
+            .map(check => `${check.status === 'warn' ? 'WARN' : 'FAIL'} ${check.label}${check.detail ? ` — ${clip(check.detail)}` : ''}`),
+          (value.checks ?? []).every(check => check.status === 'pass') ? 'every check passed.' : '',
+        ].filter(Boolean).join('\n'))
+        : renderAuditBatch(value)),
     },
     async execute(args, exec) {
+      const batch = asArray(args.paths)
+      if (batch.length > 0) {
+        const documents = []
+        for (const entry of batch) {
+          // Same validation and resolution the single-path call applies.
+          const target = path.resolve(requireString({ path: entry }, 'path'))
+          // A missing document is a failed row here, where the single-path
+          // call throws; every other step is the single-path body.
+          if (!existsSync(target)) {
+            documents.push({ path: target, ok: false, score: 0, missingPaths: [target], unknownSkills: [] })
+            continue
+          }
+          const one = await auditOneDocument(ctx, target, exec.signal)
+          documents.push({
+            path: one.path,
+            ok: one.ok,
+            score: one.score,
+            missingPaths: one.missingPaths,
+            unknownSkills: one.unknownSkills,
+          })
+        }
+        const passed = documents.filter(doc => doc.ok).length
+        return {
+          documents,
+          summary: {
+            total: documents.length,
+            passed,
+            failed: documents.length - passed,
+            averageScore: Math.round(documents.reduce((sum, doc) => sum + doc.score, 0) / documents.length),
+          },
+        }
+      }
       const target = path.resolve(requireString(args, 'path'))
       if (!existsSync(target)) throw new Error(`document not found: ${target}`)
-      const markdown = readFileSync(target, 'utf8')
-      const catalog = await skillCatalog(ctx, path.dirname(target), exec.signal)
-      const resolveReference = makeResolver(path.dirname(target))
-      const audit = auditDocument(markdown, {
-        pathExists: candidate => resolveReference(candidate) !== undefined,
-        skillNames: catalog.names,
-      })
-      return {
-        path: target,
-        bytes: statSync(target).size,
-        ok: audit.ok,
-        score: audit.score,
-        checks: audit.checks,
-        missingPaths: audit.missingPaths,
-        unknownSkills: audit.unknownSkills,
-        referencedPaths: audit.paths.length,
-      }
+      return auditOneDocument(ctx, target, exec.signal)
     },
     presentCall: args => ({ card: 'generic', title: `Audit ${path.basename(String(args?.path ?? ''))}`, kind: 'read', rawInput: args }),
     presentResult: (_args, result) => {
       const value = result?.value ?? {}
+      if (value.documents !== undefined) {
+        const summary = value.summary ?? {}
+        const failed = (value.documents ?? []).filter(doc => doc.ok !== true)
+        return {
+          card: 'generic',
+          title: `审计 ${summary.total ?? 0} 份文档：${summary.passed ?? 0} 通过 / ${summary.failed ?? 0} 失败`,
+          content: text([
+            `平均分 ${summary.averageScore ?? '?'}/100`,
+            failed.length === 0
+              ? '没有未通过的文档。'
+              : failed.map(doc => `- ${doc.path}（${doc.score}/100）`).join('\n'),
+          ].join('\n')),
+        }
+      }
       const line = check => `${check.status === 'pass' ? 'PASS' : check.status === 'warn' ? 'WARN' : 'FAIL'} ${check.label}${check.detail ? ` — ${check.detail}` : ''}`
       return {
         card: 'generic',
