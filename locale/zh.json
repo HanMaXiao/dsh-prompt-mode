@@ -1,6 +1,8 @@
 {
   "title": "提示词模式",
   "description": "给 Agent 装上提示词模式：结合真实代码库与文档生成标准的系统提示词文档，并把「先读文档再干活」的交接提示词一键交到你手上。",
+  "chat.switcher.label": "切换会话",
+  "chat.switcher.current": "当前",
   "diag.noFactorySlot": "此插槽没有注入 renderFactorySlot，无法挂载宿主的对话内容。",
   "diag.noSessionProvider": "此插槽没有注入 SessionProvider，无法把保留的会话挂进对话。",
   "diag.boundaryPrefix": "提示词会话渲染失败："

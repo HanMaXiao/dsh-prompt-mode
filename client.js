@@ -38,6 +38,8 @@ window.__ModuleLoader__.load({
     const ADDRESS_PREFIX = `dsh-resource://${PROTOCOL}/session/`
     const PROMPT_PRESET = 'prompt'
     const STORAGE_KEY = 'dsh-prompt-mode:chats'
+    /** How many remembered chats one workspace keeps in the switcher. */
+    const CHAT_HISTORY = 8
 
     /**
      * Cordis service key of the Hub plugin's mounted Typert Remote namespace.
@@ -67,6 +69,8 @@ window.__ModuleLoader__.load({
       'hub.dismiss': '关闭',
       'tab.title': '提示词会话',
       'tab.new': '新会话',
+      'chat.switcher.label': '切换会话',
+      'chat.switcher.current': '当前',
       'tab.loading': '正在打开会话…',
       'diag.noFactorySlot': '此插槽没有注入 renderFactorySlot，无法挂载宿主的对话内容。',
       'diag.noSessionProvider': '此插槽没有注入 SessionProvider，无法把保留的会话挂进对话。',
@@ -88,6 +92,8 @@ window.__ModuleLoader__.load({
       'hub.dismiss': 'Dismiss',
       'tab.title': 'Prompt chat',
       'tab.new': 'New chat',
+      'chat.switcher.label': 'Switch chat',
+      'chat.switcher.current': 'Current',
       'tab.loading': 'Opening the session…',
       'diag.noFactorySlot': 'This slot injected no renderFactorySlot, so the host conversation cannot be mounted.',
       'diag.noSessionProvider': 'This slot injected no SessionProvider, so the retained session cannot be attached to the conversation.',
@@ -191,11 +197,32 @@ window.__ModuleLoader__.load({
       return line.length > 60 ? `${line.slice(0, 60)}…` : line
     }
 
-    /** Resume one prompt chat per workspace across page reloads. */
+    /**
+     * Remembered prompt chats per workspace, oldest first.
+     *
+     * The value used to be one session id per workspace: `rememberChat`
+     * overwrote it, so every new chat erased the previous one and a chat the
+     * user switched away from was gone for good — nothing in the tab ever read
+     * the map back. A workspace now carries a short capped list instead: the
+     * tab header renders it as the switcher, and the launcher still resumes
+     * its last entry.
+     *
+     * A legacy single-id value is read as a one-entry list, so a map written
+     * by an earlier version keeps working. Anything unparsable answers `{}`:
+     * a broken record must cost the user the switcher, never the tab.
+     */
     function readChats() {
       try {
         const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}')
-        return parsed !== null && typeof parsed === 'object' ? parsed : {}
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+        const chats = {}
+        for (const [cwd, value] of Object.entries(parsed)) {
+          if (cwd === '') continue
+          const ids = typeof value === 'string' ? [value] : Array.isArray(value) ? value : []
+          const kept = [...new Set(ids.filter(id => typeof id === 'string' && id !== ''))]
+          if (kept.length > 0) chats[cwd] = kept
+        }
+        return chats
       }
       catch {
         return {}
@@ -205,7 +232,10 @@ window.__ModuleLoader__.load({
     function rememberChat(key, sessionId) {
       try {
         const chats = readChats()
-        chats[key] = sessionId
+        const previous = Array.isArray(chats[key]) ? chats[key] : []
+        // Newest last, and capped: the switcher is a way back to a recent
+        // chat, not an unbounded session log.
+        chats[key] = [...previous, sessionId].slice(-CHAT_HISTORY)
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(chats))
       }
       catch { /* private mode: the launcher just forgets */ }
@@ -238,8 +268,9 @@ window.__ModuleLoader__.load({
     /** Find the remembered chat for a workspace, or create one. */
     async function ensurePromptChat(ctx, cwd) {
       if (cwd !== undefined && cwd !== '') {
+        // Newest last, so the launcher resumes the chat used most recently.
         const known = readChats()[cwd]
-        if (typeof known === 'string' && known !== '') return known
+        if (Array.isArray(known) && known.length > 0) return known[known.length - 1]
       }
       return createPromptChat(ctx, cwd)
     }
@@ -578,24 +609,98 @@ window.__ModuleLoader__.load({
 
     /** Tab body: a slim header over the retained Session's Conversation. */
     function makeChatTab(ctx) {
+      // `translate` is bound once by `apply`, so one helper serves every
+      // component this factory builds; a missing entry answers the key itself,
+      // which is when the built-in copy takes over.
+      const tr = (key, fallback) => {
+        try {
+          const value = translate(key)
+          return typeof value === 'string' && value !== '' && value !== key ? value : fallback
+        }
+        catch {
+          return fallback
+        }
+      }
+
+      /**
+       * Compact switcher over the chats this workspace remembers.
+       *
+       * The remembered map is the only record a workspace's prompt chats ever
+       * had, and until now nothing read it back: a chat switched away from was
+       * unreachable, so the only way "forward" was a brand-new session. Each
+       * entry is a small button carrying the session's short id — the whole id
+       * is the tooltip — and the one this tab already shows is marked. The
+       * block renders nothing at all when the workspace remembers no chat, so
+       * a first-time workspace keeps the header it always had.
+       *
+       * Clicking the current entry is allowed and simply re-opens it: focusing
+       * the tab that is already open is the honest answer, and disabling the
+       * button would make the current chat look unreachable.
+       */
+      const chatSwitcher = (chats, cwd, sessionId) => {
+        const remembered = chats !== null && typeof chats === 'object' ? chats : {}
+        const ids = cwd === undefined || cwd === '' ? undefined : remembered[cwd]
+        const entries = Array.isArray(ids) ? ids.filter(id => typeof id === 'string' && id !== '') : []
+        if (entries.length === 0) return null
+
+        return h('div', {
+          style: {
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            minWidth: 0,
+          },
+        },
+        h('span', { style: { color: TOKEN.labelSoft, whiteSpace: 'nowrap' } },
+          tr('chat.switcher.label', ZH['chat.switcher.label'])),
+        entries.map((id) => {
+          const current = id === sessionId
+          return h('button', {
+            key: id,
+            type: 'button',
+            onClick: () => {
+              ctx.sidebarRight.openResource(promptChatAddress(id, cwd), {
+                kind: PROTOCOL,
+                preferNewPane: true,
+              })
+            },
+            title: id,
+            'aria-current': current ? 'true' : undefined,
+            style: {
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              border: `1px solid ${current ? TOKEN.brand : TOKEN.border}`,
+              background: TOKEN.sunken,
+              color: current ? TOKEN.brand : TOKEN.labelSoft,
+              borderRadius: 6,
+              padding: '2px 6px',
+              font: FONT,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            },
+          },
+          h('span', null, id.slice(0, 8)),
+          current
+            ? h('span', { style: { color: TOKEN.labelSoft } }, tr('chat.switcher.current', ZH['chat.switcher.current']))
+            : null)
+        }))
+      }
+
       return function PromptChatTab({ useResource, useTabInfo, SessionProvider, renderSlot }) {
         const { tab } = useTabInfo()
         const resource = useResource(tab.contentId)
-        const tr = (key, fallback) => {
-          try {
-            const value = translate(key)
-            return typeof value === 'string' && value !== '' && value !== key ? value : fallback
-          }
-          catch {
-            return fallback
-          }
-        }
+        // Seeded from the remembered map on mount, and refreshed after a fresh
+        // chat is created: the map only ever gains entries, so re-reading it
+        // costs one small parse.
+        const [chats, setChats] = useState(readChats())
         const parsed = parsePromptChatAddress(tab.contentId)
 
         const startFresh = async () => {
           if (parsed === undefined) return
           try {
             const chatId = await createPromptChat(ctx, parsed.cwd)
+            setChats(readChats())
             ctx.sidebarRight.openResource(promptChatAddress(chatId, parsed.cwd), {
               kind: PROTOCOL,
               preferNewPane: true,
@@ -623,19 +728,22 @@ window.__ModuleLoader__.load({
         h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } },
           h('span', { style: { color: TOKEN.brand, display: 'inline-flex' } }, promptGlyph()),
           h('span', null, tr('tab.title', ZH['tab.title']))),
-        h('button', {
-          type: 'button',
-          onClick: startFresh,
-          style: {
-            border: `1px solid ${TOKEN.borderStrong}`,
-            background: TOKEN.sunken,
-            color: TOKEN.label,
-            borderRadius: 6,
-            padding: '2px 8px',
-            font: FONT,
-            cursor: 'pointer',
-          },
-        }, tr('tab.new', ZH['tab.new'])))
+        h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 } },
+          chatSwitcher(chats, parsed?.cwd, parsed?.sessionId),
+          h('button', {
+            type: 'button',
+            onClick: startFresh,
+            style: {
+              border: `1px solid ${TOKEN.borderStrong}`,
+              background: TOKEN.sunken,
+              color: TOKEN.label,
+              borderRadius: 6,
+              padding: '2px 8px',
+              font: FONT,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            },
+          }, tr('tab.new', ZH['tab.new']))))
 
         const body = resource.value === undefined
           ? h('div', { style: { padding: 12, font: FONT, color: TOKEN.labelSoft } }, tr('tab.loading', ZH['tab.loading']))
