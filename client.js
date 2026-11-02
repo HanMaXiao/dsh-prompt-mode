@@ -68,6 +68,9 @@ window.__ModuleLoader__.load({
       'tab.title': '提示词会话',
       'tab.new': '新会话',
       'tab.loading': '正在打开会话…',
+      'diag.noFactorySlot': '此插槽没有注入 renderFactorySlot，无法挂载宿主的对话内容。',
+      'diag.noSessionProvider': '此插槽没有注入 SessionProvider，无法把保留的会话挂进对话。',
+      'diag.boundaryPrefix': '提示词会话渲染失败：',
     }
     const EN = {
       'launcher.label': 'Prompts',
@@ -86,6 +89,9 @@ window.__ModuleLoader__.load({
       'tab.title': 'Prompt chat',
       'tab.new': 'New chat',
       'tab.loading': 'Opening the session…',
+      'diag.noFactorySlot': 'This slot injected no renderFactorySlot, so the host conversation cannot be mounted.',
+      'diag.noSessionProvider': 'This slot injected no SessionProvider, so the retained session cannot be attached to the conversation.',
+      'diag.boundaryPrefix': 'Prompt chat failed to render: ',
     }
 
     const TOKEN = {
@@ -506,6 +512,16 @@ window.__ModuleLoader__.load({
 
       render() {
         if (this.state.error !== '') {
+          // A class render holds no component closure, so the lookup the
+          // function components do through `tr` runs here against the same
+          // module-level `translate`: a missing entry answers the key itself,
+          // and that is when the built-in copy takes over.
+          let prefix = ZH['diag.boundaryPrefix']
+          try {
+            const value = translate('diag.boundaryPrefix')
+            if (typeof value === 'string' && value !== '' && value !== 'diag.boundaryPrefix') prefix = value
+          }
+          catch { /* an unbound translate leaves the built-in copy standing */ }
           return h('div', {
             style: {
               padding: 12,
@@ -513,7 +529,7 @@ window.__ModuleLoader__.load({
               color: TOKEN.error,
               whiteSpace: 'pre-wrap',
             },
-          }, `提示词会话渲染失败：${this.state.error}`)
+          }, `${prefix}${this.state.error}`)
         }
         return this.props.children
       }
@@ -530,6 +546,15 @@ window.__ModuleLoader__.load({
       const session = useSession(value => value)
       const conversation = useConversation(value => value)
       const summaryBlank = useSessions(state => (sessionId === undefined ? undefined : state.byId[sessionId]?.blank))
+      const tr = (key, fallback) => {
+        try {
+          const value = translate(key)
+          return typeof value === 'string' && value !== '' && value !== key ? value : fallback
+        }
+        catch {
+          return fallback
+        }
+      }
       const activeTargets = conversation?.activeTargets
       const active = (activeTargets !== undefined && activeTargets.size > 0)
         || (session !== undefined && !session.blank && !session.awaitingFirstTurn)
@@ -543,7 +568,7 @@ window.__ModuleLoader__.load({
       const phase = settling ? 'settling' : hero ? 'hero' : 'active'
       if (typeof renderFactorySlot !== 'function') {
         return h('div', { style: { padding: 12, font: FONT, color: TOKEN.error } },
-          '此插槽没有注入 renderFactorySlot，无法挂载宿主的对话内容。')
+          tr('diag.noFactorySlot', ZH['diag.noFactorySlot']))
       }
       return h(PromptErrorBoundary, null,
         renderFactorySlot('conversation.content', { variant: 'embedded', phase, hero }, {
@@ -616,7 +641,7 @@ window.__ModuleLoader__.load({
           ? h('div', { style: { padding: 12, font: FONT, color: TOKEN.labelSoft } }, tr('tab.loading', ZH['tab.loading']))
           : typeof SessionProvider !== 'function'
             ? h('div', { style: { padding: 12, font: FONT, color: TOKEN.error } },
-              '此插槽没有注入 SessionProvider，无法把保留的会话挂进对话。')
+              tr('diag.noSessionProvider', ZH['diag.noSessionProvider']))
             : h(PromptErrorBoundary, null,
               h(SessionProvider, { session: resource.value.reference },
                 renderSlot('promptchat.conversation', {})))
