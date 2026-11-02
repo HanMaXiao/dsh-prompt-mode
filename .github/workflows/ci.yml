@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps: &test-steps
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # This bundle ships no runtime dependency today, so there is nothing to
       # install. The step is conditional so the day a lockfile appears, CI
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The DSH source lives in a separate public repository and only one file
       # is needed, so the clone is sparse. The step is continue-on-error and
@@ -94,7 +94,7 @@ jobs:
       # cloned, the check SKIPs instead of failing.
       - name: Check out the DSH source
         continue-on-error: true
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: deepseek-ai/deepseek-harness
           ref: master
@@ -131,7 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The sibling is a separate public repository and only one file is
       # needed, so the clone is sparse. The step is continue-on-error and the
@@ -139,7 +139,7 @@ jobs:
       # cloned, the check SKIPs instead of failing.
       - name: Check out the sibling lessons store
         continue-on-error: true
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: HanMaXiao/dsh-prompt-optimize
           ref: main
