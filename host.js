@@ -503,7 +503,7 @@ function auditTool(ctx) {
     presentCall: args => ({ card: 'generic', title: `Audit ${path.basename(String(args?.path ?? ''))}`, kind: 'read', rawInput: args }),
     presentResult: (_args, result) => {
       const value = result?.value ?? {}
-      const line = check => `${check.status === 'pass' ? '✅' : check.status === 'warn' ? '⚠️' : '❌'} ${check.label}${check.detail ? ` — ${check.detail}` : ''}`
+      const line = check => `${check.status === 'pass' ? 'PASS' : check.status === 'warn' ? 'WARN' : 'FAIL'} ${check.label}${check.detail ? ` — ${check.detail}` : ''}`
       return {
         card: 'generic',
         title: `${path.basename(String(value.path ?? ''))} · ${value.score}/100 ${value.ok ? 'PASS' : 'FAIL'}`,

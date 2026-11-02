@@ -238,6 +238,21 @@ window.__ModuleLoader__.load({
       return createPromptChat(ctx, cwd)
     }
 
+    /**
+     * Decorative glyph for the launcher and the tab header.
+     *
+     * The visible text label beside it is the element's accessible name, so
+     * the icon stays out of that name and paints with `currentColor`. Inline
+     * SVG, never an emoji glyph (AGENTS.md: zero emoji, anywhere).
+     */
+    function promptGlyph() {
+      return h('svg', {
+        width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor',
+        strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': true, focusable: false,
+      }, h('path', { d: 'M2.5 3.5h11v7h-6.5l-3.5 3v-3h-1z' }))
+    }
+
     /** Compact launcher beside the composer's left controls. */
     function makeLauncher(ctx) {
       return function PromptLauncher({ sessionId }) {
@@ -294,7 +309,7 @@ window.__ModuleLoader__.load({
             whiteSpace: 'nowrap',
           },
         },
-        h('span', { style: { color: TOKEN.brand, fontSize: 12, lineHeight: 1 } }, '✳'),
+        h('span', { style: { color: TOKEN.brand, display: 'inline-flex' } }, promptGlyph()),
         h('span', null, busy ? tr('launcher.busy', ZH['launcher.busy']) : tr('launcher.label', ZH['launcher.label'])))
       }
     }
@@ -581,7 +596,7 @@ window.__ModuleLoader__.load({
           },
         },
         h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } },
-          h('span', { style: { color: TOKEN.brand } }, '✳'),
+          h('span', { style: { color: TOKEN.brand, display: 'inline-flex' } }, promptGlyph()),
           h('span', null, tr('tab.title', ZH['tab.title']))),
         h('button', {
           type: 'button',
