@@ -115,6 +115,8 @@ dsh-prompt-mode/
 >   config:
 >     libraryDir: D:/some/where/prompt-mode
 >     scanDepth: 4
+>     maxEntries: 20000 # 扫描条目上限，默认 20000；超大仓库想提前停手就调小
+>     groupCaps: { docs: 200 } # 每组保留的条目上限，缺省 prompts 40 / specs 60 / plans 40 / docs 80 / refs 60 / code 120；按组覆盖，未列出的分组保持默认
 > ```
 
 ---
