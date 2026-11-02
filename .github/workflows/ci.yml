@@ -5,6 +5,16 @@
 # The JOB NAME is the status-check context GitHub reports: a job named
 # `node --test` reports as exactly `node --test`, and branch protection must
 # require that same string.
+#
+# The suite runs on two operating systems as TWO JOBS, not one
+# `strategy.matrix`: a matrix leg reports its context as
+# `node --test (ubuntu-latest)`, so the context `node --test` that branch
+# protection already requires would stop being reported at all. With
+# `enforce_admins` on, a required context nothing reports blocks every pull
+# request, admins included. Two named jobs keep the existing context
+# reporting exactly as it is today and add one more, so the protection rule
+# can require both strings. The steps are shared through a YAML anchor on the
+# `test` job's `steps`, so the two jobs can never drift apart.
 name: ci
 
 on:
@@ -21,11 +31,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Linux: the context branch protection has required since the beginning.
+  # The anchor on `steps` is what lets the Windows job below run the very same
+  # sequence — a change to the verification command lands on both platforms in
+  # one edit instead of being remembered twice.
   test:
     name: node --test
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    steps:
+    steps: &test-steps
       - uses: actions/checkout@v4
 
       # This bundle ships no runtime dependency today, so there is nothing to
@@ -46,6 +60,20 @@ jobs:
           node-version: 24
 
       - run: node --test
+
+  # The same suite on Windows. It earns its own required check rather than an
+  # assumption: the suite writes through `mkdtempSync`, resolves paths and
+  # makes files read-only, and `tests/host-write-safety.test.js` already
+  # carries a `win32` branch for this platform's rename-over-readonly
+  # semantics — behaviour nothing exercised until this job existed.
+  #
+  # The name is deliberately `node --test (windows)`: branch protection must
+  # require this exact string.
+  test-windows:
+    name: node --test (windows)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps: *test-steps
 
   # Informational companion to the test job: this bundle replicates the shipped
   # `standard` preset's plugin list in its own `preset-prompt` row, and a DSH
