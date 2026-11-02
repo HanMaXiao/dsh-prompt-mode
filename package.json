@@ -3,6 +3,10 @@
   "version": "1.3.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "verify": "node scripts/verify-host.mjs"
+  },
   "description": "Prompt Mode: author grounded, standard system-prompt documents and hand them off with one copy-paste line.",
   "icon": "./icon.svg",
   "exports": {
