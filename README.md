@@ -32,7 +32,7 @@
 |------|--------|---------|
 | `prompt_doc_plan` | 用任务描述扫真实仓库，产出**真实文件路径**分组（prompts / specs / plans / docs / refs / code）+ 按任务打分的**技能候选** | 有界扫描（深度、条目数、每组上限），不会在大仓库里失控 |
 | `prompt_doc_write` | 按标准渲染并落盘文档，返回交接提示词 | 逐条 stat 数据源、逐条核对 skill 名；已存在且未 `overwrite` 时拒绝覆盖 |
-| `prompt_doc_audit` | 按标准给已有文档打分 | 元信息块、七个章节、章节顺序、数据源章节路径、skill 可解析性、立即开始是否可执行 |
+| `prompt_doc_audit` | 按标准给已有文档打分，也可一次审计多个文档并给出汇总 | 元信息块、七个章节、章节顺序、数据源章节路径、skill 可解析性、立即开始是否可执行 |
 | `prompt_doc_learn` | 记一条教训，写进最佳实践 skill | 立即失效并重注册 skill，**不需要重启**下一个会话就能读到 |
 
 ### 3 · 文档标准
@@ -132,7 +132,7 @@ plugin_manager { action: "install_bundle", target: "D:\\XiaoProject\\DSHPluginDe
 
 `install_bundle` 会自己做 pnpm 安装与 bundle 选择，**不要**手动改 profile 的 `package.json` / `cordis.patch.yml`。
 
-离线自测（74 项通过 / 4 项跳过；跳过的 4 项是当前工作区缺失的 canonical 参考文档，见「一、文档标准」）：
+离线自测（196 项通过 / 4 项跳过；跳过的 4 项是当前工作区缺失的 canonical 参考文档，见「一、文档标准」）：
 
 ```powershell
 cd D:\XiaoProject\DSHPluginDev\dsh-prompt-mode

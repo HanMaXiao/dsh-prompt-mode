@@ -2,6 +2,39 @@
 
 本仓库遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的格式，版本号尽量贴近 [语义化版本](https://semver.org/lang/zh-CN/)。README 持有当前状态的事实，本文件只记录版本之间变了什么。本文件从 1.3.0 起记；更早的历史在 git log 里。
 
+## [1.4.0] - 2026-11-02
+
+### 新增
+
+- **`prompt_doc_audit` 批量模式。** 新增 `paths` 参数：一次调用审计多个文档，逐文档给出分数、PASS/FAIL 与问题，外加一行汇总（总数、通过 / 失败数、平均分）；省掉 `paths` 时行为与返回形状和以前完全一致。
+- **提示词会话切换器。** 标签页头部把本工作区记住的会话列成一排小按钮（短 session id，当前会话标「当前」），点一下就在右侧栏打开那个会话。记住的列表从「每工作区一个 id」换成 localStorage 里的有界列表（上限 8 条），旧的单 id 记录按单条目列表读取，启动器仍恢复最后一条。
+- **可配置的扫描边界。** 插件 config 新增 `maxEntries`（扫描条目上限）与 `groupCaps`（每组保留上限，未列出的分组保持默认）两个键；类型、范围、未知键与未知分组都在 apply 时响亮报错，不静默回退默认值。
+
+### 变更
+
+- **审计标记与图标去 emoji。** `prompt_doc_audit` 的 `presentResult` 用 PASS / WARN / FAIL 文字标记取代 emoji 三件套；启动器与标签页头部改用内联 SVG 图标（可访问名不变），skill 正文的约束行同步换词。
+
+### 修复
+
+- **`prompt_doc_write` 落盘前校验。** 每个数据源路径与 skill 名现在在动磁盘之前解析：解析不动的条目默认让调用失败并逐条点名，`force: true` 才强行写入（结果仍带同样的报告）。此前死路径只会在文档写完之后的结果里报出。
+- **Client 诊断字符串 locale 化。** `diag.*` 诊断文案改走 locale 字典，zh / en 两份同步加同样的键。
+
+### 重构
+
+- **四个工具定义移入 `lib/tools.js`。** `host.js` 只留装配层（config 解析、自迭代 skill、回执、入口）；纯移动，函数签名与导出形状不变，`node --test` 计数不变。
+- **有界扫描改用索引队列与解析器记忆化。** 大仓库里的 syscalls 随之下降；扫描结果与分组不变。
+
+### 工具
+
+- **仓库守护测试。** 新增三条：AGENTS.md 不超过 8192 字节预算、每个 git 跟踪文本文件恰好一个结尾新行、全仓库零 emoji。
+- **CI 上 Windows。** 测试套件在 ubuntu 之外多一个 `node --test (windows)` 作业——两个具名作业而非 matrix，分支保护因此要求 `node --test` 与 `node --test (windows)` 两个 context；同时补上 resolver 与 plan 工具路径的测试。
+- **`scripts/verify-host.mjs`。** 把「另起一个晚于代码的 profile、跑通四个回执判据」的手工流程脚本化为一条命令（`npm run verify`）；DSH CLI 不可得时打印 SKIP 并以 0 退出。
+- **`scripts/check-lessons-mirror.mjs`。** 比对本包与姊妹包 `lib/lessons.js` 的契约面（4 个导出加行为探针），退出码与 `check-preset-drift.mjs` 一致；CI 增加 `continue-on-error` 的 `lessons mirror drift (informational)` job。
+
+### 文档
+
+- 新增 `SECURITY.md`、`CONTRIBUTING.md`、`CODEOWNERS`、dependabot 配置、issue 模板、PR 模板与 `.gitignore`。
+
 ## [1.3.0] - 2026-10-30
 
 ### 新增
@@ -27,3 +60,4 @@
 - 新增 `AGENTS.md`（未来 agent 的工作规则）与 `.agents/notes/`（决策理由库）。README 里指向已删除的 `check.mjs` 的引用、过期的自测计数「44 项」、过期的预设行数「131 行标准插件列表」一并订正。
 
 [1.3.0]: https://github.com/HanMaXiao/dsh-prompt-mode/compare/d5490a3...6c9a2aa
+[1.4.0]: https://github.com/HanMaXiao/dsh-prompt-mode/compare/4c52223...8b661f1
