@@ -4,15 +4,18 @@
  * `prompt_doc_write` renders and persists a document on a real path and returns
  * the copy-paste handoff line, `prompt_doc_audit` scores what landed, the
  * overwrite guard refuses to clobber it, and `prompt_doc_learn` folds a lesson
- * into the evolving skill. The tools are the shipped definitions, captured out
- * of the same fake Cordis context the registration tests use.
+ * into the evolving skill. `prompt_doc_write` also resolves every data-source
+ * path and skill name before it touches the disk: unresolved entries fail the
+ * call unless `force: true` is passed, and the tools are the shipped
+ * definitions, captured out of the same fake Cordis context the registration
+ * tests use.
  *
  * The old script cited `check.mjs` as its relative data source and wrote its
  * artifacts into the workspace root. Both move: the script is deleted by this
  * migration, and `node --test` runs this file as its own process, so the fixture
  * and the document live in this file's own temporary directory.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -121,5 +124,65 @@ describe('tool behaviour on a live path', () => {
 
   it('learn reports the readable mirror', () => {
     assert.equal(typeof learned.mirror, 'string', String(learned.mirror))
+  })
+})
+
+describe('prompt_doc_write validates before it persists', () => {
+  let writeTool
+  const deadSource = 'no-such-source.md'
+
+  before(async () => {
+    const host = fakeContext()
+    applyHost(host.ctx, { libraryDir: testLibrary })
+    writeTool = host.registered.tools.find(tool => tool.name === 'prompt_doc_write')
+  })
+
+  it('refuses to write when a data source does not resolve', async () => {
+    // The target sits in a directory that does not exist yet, so asserting it
+    // is still absent also proves the rejection happened before mkdirSync.
+    const target = path.join(testLibrary, 'rejected', 'dead-source-doc.md')
+    await assert.rejects(
+      () => writeTool.execute({
+        path: target,
+        title: '死数据源被拒',
+        appliesTo: '验证 prompt_doc_write 在落盘前拒绝未解析的数据源',
+        role: '你是一位自测工程师。',
+        entry: 'Step 1 被拒',
+        dataSources: [{ path: deadSource, covers: '一个不存在的文件' }],
+      }, { agent: undefined, signal: undefined }),
+      error => {
+        assert.match(error.message, /refusing to write/)
+        assert.ok(error.message.includes(deadSource), `message names the dead path: ${error.message}`)
+        assert.ok(error.message.includes('force: true'), `message explains the escape hatch: ${error.message}`)
+        return true
+      },
+    )
+    assert.equal(existsSync(target), false, 'the document was never written')
+    assert.equal(existsSync(path.dirname(target)), false, 'the target directory was never created')
+  })
+
+  it('writes with force: true and still reports the unresolved entries', async () => {
+    const target = path.join(testLibrary, 'forced-doc.md')
+    rmSync(target, { force: true })
+
+    const result = await writeTool.execute({
+      path: target,
+      title: 'force 逃生门',
+      appliesTo: '验证 force: true 后照常落盘且如实报告未解析条目',
+      role: '你是一位自测工程师。',
+      entry: 'Step 1 强制落盘',
+      skills: [
+        { when: '需要驱动 Blender 时', skill: 'blender-mcp-best-practices' },
+        { when: '一个不存在的技能', skill: 'not-a-real-skill' },
+      ],
+      dataSources: [{ path: deadSource, covers: '一个不存在的文件' }],
+      force: true,
+    }, { agent: undefined, signal: undefined })
+
+    assert.equal(existsSync(target), true, 'the document was written')
+    assert.deepEqual(result.missingPaths, [deadSource], result.missingPaths.join(','))
+    assert.deepEqual(result.unknownSkills, ['not-a-real-skill'], result.unknownSkills.join(','))
+    assert.equal(result.handoff, `请先读 ${target}，然后开始 Step 1 强制落盘。`)
+    assert.match(result.next, /Fix missingPaths \/ unknownSkills/)
   })
 })
