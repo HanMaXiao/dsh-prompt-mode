@@ -24,3 +24,6 @@ Thumbs.db
 /system-prompt-doc-best-practices.md
 /status.json
 /preset.json
+
+# Advisor scan artifacts (project-development-advisor output); never source.
+.ai-advice/
