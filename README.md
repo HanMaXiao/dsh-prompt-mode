@@ -246,21 +246,18 @@ node --test
 
 「Host 侧改动要重启」这条结论把在线验证变成了死结，绕开的办法是**另起一个晚于代码的 profile**：新进程 = 全新 `import()`。全程不碰正在跑的 `web` 会话。
 
+整套流程已经脚本化为一条命令（零依赖，只用 `node:` 内置模块）：
+
 ```powershell
-$cli = 'D:\XiaoProject\deepseek-harness\apps\cli\lib\bin.js'
-
-# 1) 从 shipped headless 模板建一个隔离 profile（--dump-config 只建不启动）
-node $cli --profile promptverify --from-default-profile headless --dump-config > $null
-
-# 2) 用真实 CLI 装 bundle（会同时写 dependencies 和 dsh.profile.bundles）
-node $cli plugin --profile promptverify add link:D:/XiaoProject/DSHPluginDev/dsh-prompt-mode
-
-# 3) 起一个新 Host 进程问它自己有哪些工具
-Remove-Item Env:DSH_PROFILE_DIR, Env:DSH_PROFILE -ErrorAction SilentlyContinue
-node $cli --profile promptverify "只输出一行：你当前可用工具中所有以 prompt_doc 开头的工具名，用逗号分隔。"
+cd D:\XiaoProject\DSHPluginDev\dsh-prompt-mode
+node scripts\verify-host.mjs        # 或 npm run verify
 ```
 
-`promptverify` 的 `cordis.patch.yml` 里还加了两行——`permission`（`danger-full-access`，headless 没人在旁边批准）和一行 **insert** 进去的 `agent-preset-registry`（`config.default: prompt`）。第二步缺了它，`preset-prompt` 行会一直 `pending`，预设的子树永远不会被解析。注意那是 `- insert:` 包起来的新行，不是顶层 `- id:` 覆盖。
+脚本按顺序做完全部手工步骤：解析 CLI（env `DSH_CLI` → 已知检出 `D:\XiaoProject\deepseek-harness\apps\cli\lib\bin.js` → PATH 上的 `dsh`；都不可得时打印 SKIP 并以 0 退出，和 `check-preset-drift.mjs` 对待缺失 DSH 源码根一样不报错）→ 用 `--from-default-profile headless --dump-config` 建一个 `promptverify-<pid>` 隔离 profile（只建不启动）→ `plugin add link:<本包绝对路径>`（绝对路径由脚本自身位置推导，worktree 里跑的就是连到那份代码）→ 写两行补丁覆盖层 → headless 提问 → 断言回执。开跑先打印这次用的 CLI、profile、覆盖层与 `<libraryDir>`；子进程环境里剥掉 `DSH_PROFILE_DIR` / `DSH_PROFILE`——DSH 的 shell 里这两个变量是有的，不剥回执就落进正在跑的 profile 而不是文档里的 `~/.dsh/prompt-mode`。
+
+补丁覆盖层里有两行——`permission`（`danger-full-access`，headless 没人在旁边批准）和一行 **insert** 进去的 `agent-preset-registry`（`config.default: prompt`）。第二步缺了它，`preset-prompt` 行会一直 `pending`，预设的子树永远不会被解析。注意那是 `- insert:` 包起来的新行，不是顶层 `- id:` 覆盖。覆盖层经 `--patch` 应用，profile 自己的 user layer 保持 shipped 的空列表。
+
+提问文案固定为「只输出一行：你当前可用工具中所有以 prompt_doc 开头的工具名，用逗号分隔。」，可用 env `VERIFY_QUERY` 覆盖。不想调模型时加 `--receipts-only`：不带任务启动一次——树照常挂载、回执照常落盘，然后在模型调用前停下——只断言回执、跳过答案判据。两种模式退出码一致：0 全部适用判据通过，1 有判据失败，2 用法错误。结尾打印清理命令，profile 故意不自动删。
 
 判定四条，全部是文件/输出事实，不依赖任何行状态：
 
@@ -271,9 +268,14 @@ node $cli --profile promptverify "只输出一行：你当前可用工具中所�
 | `<libraryDir>/preset.json` | 带 `section: "prompt:policy"` 与 `order: 520`（**第二次写入**的形态才说明段注册了） |
 | `<libraryDir>/system-prompt-doc-best-practices.md` | 每次加载都被重写，正文含基线 + 经验教训段 |
 
-预设那一条要配一个**对照**才有说服力——否则「文件在」可能只是自证。用一个覆盖层把预设换成必然解析失败的行，重跑，`preset.json` 必须**不出现**：
+脚本还给每条回执加了一条保鲜判断：回执时间早于本次运行开始，就判失败而不是放过——否则上一次运行留下的旧回执会让「文件在」变成自证。headless 组合里没有 `agentPresets` 服务时（「六、当前状态」记录过这个 app 组合差异），预设那一条打印 SKIP、不判失败。
+
+预设那一条还要配一个**对照**才有说服力——否则「文件在」可能只是自证。脚本不跑这一条，手工补跑：用一个覆盖层把预设换成必然解析失败的行，重跑，`preset.json` 必须**不出现**：
 
 ```powershell
+$cli = 'D:\XiaoProject\deepseek-harness\apps\cli\lib\bin.js'
+$profile = 'promptverify-<pid>'   # 脚本这次实际用的名字，见它结尾打印的清理命令
+
 @'
 - id: preset-prompt
   config:
@@ -283,11 +285,11 @@ node $cli --profile promptverify "只输出一行：你当前可用工具中所�
         name: 'definitely-not-a-real-module-name'
 '@ | Set-Content control-overlay.yml
 Remove-Item "$env:USERPROFILE\.dsh\prompt-mode\preset.json" -Force
-node $cli --profile promptverify --patch .\control-overlay.yml "回答一个字：好"
+node $cli --profile $profile --patch .\control-overlay.yml "回答一个字：好"
 Test-Path "$env:USERPROFILE\.dsh\prompt-mode\preset.json"   # 必须是 False
 ```
 
-不再需要这个 profile 时：
+不再需要这个 profile 时（脚本结尾也会按实际名字把这条再打印一次）：
 
 ```powershell
 Remove-Item -Recurse -Force C:\Users\xiaoge\.dsh\profiles\promptverify
