@@ -86,9 +86,10 @@
 dsh-prompt-mode/
 ├── package.json          bundle 清单：dsh.bundle.patch + dsh.client + icon + 子路径导出
 ├── cordis.patch.yml      两行：prompt-doc-core（Host 核心）+ preset-prompt（提示词模式预设）
-├── host.js               Host 核心：4 个工具 + 自迭代 skill + status.json 回执
+├── host.js               装配层：四个工具的装配 + 自迭代 skill + status.json 回执
 ├── mode.js               预设作用域：prompt:policy 系统提示词
 ├── client.js             Client：编辑器启动器 + 右侧栏浮动标签页里的嵌入对话
+├── lib/tools.js          四个工具定义（plan / write / audit / learn）+ 私有助手
 ├── lib/standard.js       文档标准：渲染 / 审计 / 路径解析 / 技能打分（纯函数，无 Node 依赖）
 ├── lib/lessons.js        教训存储（同步读、追加写、可读镜像）
 ├── lib/scan.js           有界仓库扫描与文件分类
