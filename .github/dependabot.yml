@@ -1,0 +1,15 @@
+# The two inputs this repository actually has in scope: the GitHub Actions its
+# CI runs, and the npm manifest. The package declares no runtime dependency
+# today, so the npm entry has nothing to update; it is kept in the standard
+# shape so that a future dependency is covered from the day it is added.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
