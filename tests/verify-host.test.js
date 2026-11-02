@@ -58,16 +58,19 @@ describe('resolveCliPath', () => {
     assert.equal(resolveCliPath({ PATH: 'C:\\bin' }, isFile), KNOWN_CLI_PATH)
   })
 
+  // PATH entries are colon-free on purpose: a Windows-style `C:\dir` carries a
+  // colon that is the POSIX path delimiter, so such a literal splits into two
+  // broken segments on Linux and the test would only ever pass on Windows.
   it('falls back to dsh on PATH', () => {
-    const dir = path.join('D:', 'dshbin')
+    const dir = path.join('fake', 'dshbin')
     const expected = path.join(dir, PATH_CLI_NAME)
     const isFile = candidate => candidate === expected
-    assert.equal(resolveCliPath({ PATH: `C:\\tools${path.delimiter}${dir}` }, isFile), expected)
+    assert.equal(resolveCliPath({ PATH: `elsewhere${path.delimiter}${dir}` }, isFile), expected)
   })
 
   it('takes the first PATH directory that holds a candidate', () => {
-    const first = path.join('C:', 'first')
-    const second = path.join('D:', 'second')
+    const first = path.join('fake', 'first')
+    const second = path.join('fake', 'second')
     const isFile = candidate => candidate === path.join(first, PATH_CLI_NAME)
       || candidate === path.join(second, PATH_CLI_NAME)
     assert.equal(
@@ -77,7 +80,7 @@ describe('resolveCliPath', () => {
   })
 
   it('returns undefined when no source is available', () => {
-    assert.equal(resolveCliPath({ PATH: 'C:\\empty' }, () => false), undefined)
+    assert.equal(resolveCliPath({ PATH: `nowhere${path.delimiter}empty` }, () => false), undefined)
     assert.equal(resolveCliPath({}, () => false), undefined)
   })
 })
