@@ -1,6 +1,8 @@
 {
   "title": "Prompt Mode",
   "description": "Gives the agent a prompt mode: author standard system-prompt documents grounded in the real codebase, and hand off with one copy-paste line.",
+  "chat.switcher.label": "Switch chat",
+  "chat.switcher.current": "Current",
   "diag.noFactorySlot": "This slot injected no renderFactorySlot, so the host conversation cannot be mounted.",
   "diag.noSessionProvider": "This slot injected no SessionProvider, so the retained session cannot be attached to the conversation.",
   "diag.boundaryPrefix": "Prompt chat failed to render: "

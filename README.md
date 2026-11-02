@@ -70,7 +70,7 @@
 - **入口**：编辑器工具栏左侧一个「提示词」小按钮（`conversation.input.left`）。点一下：找到或新建本工作区专属的提示词会话 → 给它绑定 `prompt` preset（`remote.agentPresets.select`）→ 在右侧栏浮动标签页打开它。
 - **存到 Hub**：同一个 `conversation.input.left` 座位里、启动器右侧的第二个小按钮（`prompt-mode.save-to-hub`）把输入框里的草稿复制成 Hub 插件的 Prompt 条目。它只消费 Hub 自己挂上的 `remote.hub` 命名空间，不贡献任何东西：没装 Hub 就整个不渲染，草稿为空就禁用并说明原因，保存被拒就显示一行可关闭的原因。草稿永不清空——这是复制，不是发送。
 - **面板**：右侧栏标签页，里面用宿主的 `conversation.content` 工厂以 `variant: 'embedded'` 渲染那个会话。于是**编辑器、模型选择器、@ 文件引用选择器全部白送**——因为那就是 DSH 的对话框本身。
-- **标签页头部**：标题 +「新会话」按钮（换一个新工作区会话，旧的保留）。
+- **标签页头部**：标题 + 会话切换器 +「新会话」按钮。切换器把本工作区记得的会话列成一排小按钮（短 session id，当前会话标「当前」），点一下就在右侧栏打开那个会话——旧会话不会再一离开就回不来；「新会话」换一个新工作区会话，旧的保留。
 
 做法与 `ui-subagent` 的 sidebar-chat 完全同构：`ctx.resources.register` 一个 `promptchat` 协议提供者，把会话 id 适配成 `SessionReference`；`sidebar.right.pane.tab` 用 `SessionProvider` 包住内层会话级插槽；内层组件调用 `renderFactorySlot('conversation.content', { variant: 'embedded', phase, hero }, …)`。
 
